@@ -118,6 +118,21 @@ static void init_worker_pool() {
 
 long long get_time_ms() { struct timeval tv; gettimeofday(&tv, NULL); return (long long)tv.tv_sec*1000 + tv.tv_usec/1000; }
 
+static void append_speed_log_near_output(const char* out_path, const char* line) {
+    if (!out_path || !line) return;
+
+    std::string log_path(out_path);
+    size_t slash = log_path.find_last_of('/');
+    if (slash == std::string::npos) return;
+
+    log_path = log_path.substr(0, slash + 1) + "SPEEDLOG.TXT";
+    FILE* log_file = fopen(log_path.c_str(), "a");
+    if (!log_file) return;
+
+    fprintf(log_file, "%s\n", line);
+    fclose(log_file);
+}
+
 static int choose_grain_transform(uint32_t seed, bool enabled) {
     if (!enabled) return 0;
     uint32_t h = seed ^ (seed >> 16) ^ 0x9E3779B9u;
@@ -415,7 +430,7 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
     if (work_0) { free(work_0); free(work_1); free(work_2); free(work_h); free(h_line); }
     int logged_width = cc.image_width;
     int logged_height = cd.output_height;
-    free(rb); free(ob); jpeg_finish_compress(&cc); jpeg_destroy_compress(&cc); jpeg_finish_decompress(&cd); jpeg_destroy_decompress(&cd); fclose(inf); fclose(ouf); env->ReleaseStringUTFChars(inPath,ifn); env->ReleaseStringUTFChars(outPath,ofn);
+    free(rb); free(ob); jpeg_finish_compress(&cc); jpeg_destroy_compress(&cc); jpeg_finish_decompress(&cd); jpeg_destroy_decompress(&cd); fclose(inf); fclose(ouf);
     finish_done_ms = get_time_ms();
     LOGD("TIMING processImage total=%lldms open=%lldms decodeSetup=%lldms encodeSetup=%lldms bufferSetup=%lldms rows=%lldms finish=%lldms path=%s scale=%d size=%dx%d visibleRows=%d crop=%d grainEngine=%d jpegQuality=%d cores=%d rowStream=%d fastYuvTexture=%d",
          finish_done_ms - st,
@@ -436,6 +451,29 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
          numCores,
          row_stream_mode ? 1 : 0,
          use_fast_yuv_texture ? 1 : 0);
+    char timing_line[512];
+    snprintf(timing_line, sizeof(timing_line),
+         "TIMING processImage total=%lldms open=%lldms decodeSetup=%lldms encodeSetup=%lldms bufferSetup=%lldms rows=%lldms finish=%lldms path=%s scale=%d size=%dx%d visibleRows=%d crop=%d grainEngine=%d jpegQuality=%d cores=%d rowStream=%d fastYuvTexture=%d",
+         finish_done_ms - st,
+         open_done_ms - st,
+         decode_setup_done_ms - open_done_ms,
+         encode_setup_done_ms - decode_setup_done_ms,
+         buffer_setup_done_ms - encode_setup_done_ms,
+         processing_done_ms - buffer_setup_done_ms,
+         finish_done_ms - processing_done_ms,
+         use_rgb ? "RGB" : "YUV",
+         scaleDenom,
+         logged_width,
+         logged_height,
+         fh,
+         applyCrop ? 1 : 0,
+         advancedGrainExperimental,
+         jpegQuality,
+         numCores,
+         row_stream_mode ? 1 : 0,
+         use_fast_yuv_texture ? 1 : 0);
+    append_speed_log_near_output(ofn, timing_line);
+    env->ReleaseStringUTFChars(inPath,ifn); env->ReleaseStringUTFChars(outPath,ofn);
     return JNI_TRUE;
 }
 

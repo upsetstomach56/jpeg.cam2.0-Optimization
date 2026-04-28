@@ -4,6 +4,7 @@ import android.content.Context;
 import android.os.AsyncTask;
 import android.util.Log;
 import java.io.File;
+import java.io.FileWriter;
 
 public class ImageProcessor {
     private LutEngine mEngine;
@@ -80,6 +81,22 @@ public class ImageProcessor {
         }
 
         @Override protected void onPreExecute() { mCallback.onProcessStarted(); }
+
+        private void appendTimingLog(File outFile, String line) {
+            FileWriter writer = null;
+            try {
+                File logFile = new File(outFile.getParentFile(), "SPEEDLOG.TXT");
+                writer = new FileWriter(logFile, true);
+                writer.write(line);
+                writer.write("\n");
+            } catch (Exception e) {
+                Log.e("COOKBOOK", "Timing file write failed: " + e.getMessage());
+            } finally {
+                try {
+                    if (writer != null) writer.close();
+                } catch (Exception ignored) {}
+            }
+        }
 
         @Override protected String doInBackground(String... params) {
             long taskStartMs = System.currentTimeMillis();
@@ -165,7 +182,8 @@ public class ImageProcessor {
                     finalJpegQuality, 
                     applyCrop, numCores);  // <--- ADDED numCores HERE
                 nativeDoneMs = System.currentTimeMillis();
-                Log.d("COOKBOOK", "TIMING processJpeg total=" + (nativeDoneMs - taskStartMs)
+                String timingLine = "TIMING processJpeg file=" + original.getName()
+                        + " total=" + (nativeDoneMs - taskStartMs)
                         + "ms waitForFile=" + (fileReadyMs - taskStartMs)
                         + "ms lutLoad=" + (lutReadyMs - fileReadyMs)
                         + "ms outputSetup=" + (outputReadyMs - lutReadyMs)
@@ -180,7 +198,9 @@ public class ImageProcessor {
                         + " crop=" + applyCrop
                         + " diptych=" + isDiptych
                         + " cores=" + numCores
-                        + " success=" + success);
+                        + " success=" + success;
+                Log.d("COOKBOOK", timingLine);
+                appendTimingLog(outFile, timingLine);
                 if (success) {
                     return "SAVED";
                 }
