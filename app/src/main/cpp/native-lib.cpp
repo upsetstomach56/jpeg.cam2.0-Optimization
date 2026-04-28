@@ -185,11 +185,19 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(
     jboolean applyCrop) { // <-- ADDED XPAN CROP FLAG
 
     long long start_time = get_time_ms();
+    long long open_done_ms = start_time;
+    long long header_done_ms = start_time;
+    long long decode_setup_done_ms = start_time;
+    long long encode_setup_done_ms = start_time;
+    long long row_prep_done_ms = start_time;
+    long long process_done_ms = start_time;
+    long long finish_done_ms = start_time;
 
     const char *in_file  = env->GetStringUTFChars(inPath,  NULL);
     const char *out_file = env->GetStringUTFChars(outPath, NULL);
     FILE *infile  = fopen(in_file,  "rb");
     FILE *outfile = fopen(out_file, "wb");
+    open_done_ms = get_time_ms();
 
     if (!infile || !outfile) {
         if (infile)  fclose(infile);
@@ -230,6 +238,7 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(
         }
         free(header);
     }
+    header_done_ms = get_time_ms();
 
     bool use_rgb_path = (nativeLutSize > 0 && opacity > 0);
     struct jpeg_decompress_struct cinfo_d;
@@ -265,6 +274,7 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(
         cinfo_d.out_color_space = use_rgb_path ? JCS_RGB : JCS_YCbCr;
         jpeg_start_decompress(&cinfo_d);
     }
+    decode_setup_done_ms = get_time_ms();
 
     cinfo_c.err = jpeg_std_error(&jerr_c.pub);
     jerr_c.pub.error_exit = my_error_exit;
@@ -295,6 +305,7 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(
     jpeg_start_compress(&cinfo_c, TRUE);
 
     if (!exifData.empty()) jpeg_write_marker(&cinfo_c, JPEG_APP0 + 1, exifData.data(), exifData.size());
+    encode_setup_done_ms = get_time_ms();
 
     int row_stride    = cinfo_d.output_width * 3;
     long long cx      = cinfo_d.output_width  / 2;
@@ -354,6 +365,7 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(
             memcpy(rows[i], rows[i-1], row_stride);
         }
     }
+    row_prep_done_ms = get_time_ms();
 
     // --- MAIN PROCESSING LOOP ---
     int processed_rows = 0;
@@ -411,6 +423,7 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(
         
         processed_rows++;
     }
+    process_done_ms = get_time_ms();
 
     free(row_block);
     if (work_0) free(work_0);
@@ -419,10 +432,33 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(
     if (work_h) free(work_h);
     if (h_line) free(h_line);
 
+    int logged_width = cinfo_c.image_width;
+    int logged_height = cinfo_d.output_height;
+
     jpeg_finish_compress(&cinfo_c);  jpeg_destroy_compress(&cinfo_c);
     jpeg_finish_decompress(&cinfo_d); jpeg_destroy_decompress(&cinfo_d);
     fclose(infile); fclose(outfile);
     env->ReleaseStringUTFChars(inPath, in_file);
     env->ReleaseStringUTFChars(outPath, out_file);
+    finish_done_ms = get_time_ms();
+    LOGD("TIMING processImage total=%lldms open=%lldms header=%lldms decodeSetup=%lldms encodeSetup=%lldms rowPrep=%lldms rows=%lldms finish=%lldms path=%s scale=%d finalScale=%d size=%dx%d visibleRows=%d rgb=%d crop=%d grainEngine=%d jpegQuality=%d",
+         finish_done_ms - start_time,
+         open_done_ms - start_time,
+         header_done_ms - open_done_ms,
+         decode_setup_done_ms - header_done_ms,
+         encode_setup_done_ms - decode_setup_done_ms,
+         row_prep_done_ms - encode_setup_done_ms,
+         process_done_ms - row_prep_done_ms,
+         finish_done_ms - process_done_ms,
+         use_rgb_path ? "RGB" : "YUV",
+         scaleDenom,
+         finalScale,
+         logged_width,
+         logged_height,
+         final_height,
+         use_rgb_path ? 1 : 0,
+         applyCrop ? 1 : 0,
+         advancedGrainExperimental,
+         jpegQuality);
     return JNI_TRUE;
 }

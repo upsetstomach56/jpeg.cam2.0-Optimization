@@ -60,6 +60,14 @@ public class ImageProcessor {
         @Override protected void onPreExecute() { mCallback.onProcessStarted(); }
 
         @Override protected String doInBackground(String... params) {
+            long taskStartMs = System.currentTimeMillis();
+            long fileReadyMs = taskStartMs;
+            long outputReadyMs = taskStartMs;
+            long textureReadyMs = taskStartMs;
+            long nativeDoneMs = taskStartMs;
+            int scale = -1;
+            int finalJpegQuality = this.jpegQuality;
+            int cxxGrainEngine = p.advancedGrainExperimental;
             try {
                 File original = new File(params[0]);
                 if (!original.exists()) return "ERR";
@@ -71,6 +79,7 @@ public class ImageProcessor {
                     lastSize = currentSize;
                     Thread.sleep(100); timeout++;
                 }
+                fileReadyMs = System.currentTimeMillis();
 
                 File dir = new File(outDir);
                 if (!dir.exists()) dir.mkdirs();
@@ -82,19 +91,18 @@ public class ImageProcessor {
                 fos.close();
 
                 // 0=1/4 RES (4), 1=HALF RES (2), 2=FULL RES (1)
-                int scale = (qualityIdx == 0) ? 4 : (qualityIdx == 2 ? 1 : 2);
+                scale = (qualityIdx == 0) ? 4 : (qualityIdx == 2 ? 1 : 2);
 
-                int finalJpegQuality = this.jpegQuality;
                 // Still enforce safe limits for downscaled proxies to save RAM
                 if (scale == 4) {
                     finalJpegQuality = Math.min(85, this.jpegQuality);
                 } else if (scale == 2) {
                     finalJpegQuality = Math.min(90, this.jpegQuality);
                 }
+                outputReadyMs = System.currentTimeMillis();
 
                 // --- NEW: ENGINE 2 TEXTURE INTERCEPT ---
-                int cxxGrainEngine = p.advancedGrainExperimental;
-                
+
                 // If the user selected an SD card texture (Index 2 or higher)
                 if (cxxGrainEngine >= 2) {
                     int fileIndex = cxxGrainEngine - 2;
@@ -105,17 +113,29 @@ public class ImageProcessor {
                     cxxGrainEngine = 2; // Lock the C++ flag to Engine 2
                 }
                 // --- END NEW ---
+                textureReadyMs = System.currentTimeMillis();
 
-                if (mEngine.applyLutToJpeg(
+                boolean success = mEngine.applyLutToJpeg(
                     original.getAbsolutePath(), outFile.getAbsolutePath(),
                     scale, p.opacity, p.grain, p.grainSize, p.vignette, p.rollOff,
                     p.colorChrome, p.chromeBlue, p.shadowToe, p.subtractiveSat,
                     p.halation, p.bloom, 
                     cxxGrainEngine, 
                     finalJpegQuality, 
-                    applyCrop)) {  // <--- ADDED HERE
-                return "SAVED";
-            }
+                    applyCrop);
+                nativeDoneMs = System.currentTimeMillis();
+                Log.d("COOKBOOK", "TIMING processJpeg total=" + (nativeDoneMs - taskStartMs)
+                        + "ms waitForFile=" + (fileReadyMs - taskStartMs)
+                        + "ms outputSetup=" + (outputReadyMs - fileReadyMs)
+                        + "ms textureLoad=" + (textureReadyMs - outputReadyMs)
+                        + "ms nativeCall=" + (nativeDoneMs - textureReadyMs)
+                        + "ms scale=" + scale
+                        + " qualityIdx=" + qualityIdx
+                        + " jpegQuality=" + finalJpegQuality
+                        + " grainEngine=" + cxxGrainEngine
+                        + " crop=" + applyCrop
+                        + " success=" + success);
+                if (success) return "SAVED";
             } catch (Exception e) { Log.e("COOKBOOK", "Java error: " + e.getMessage()); }
             return "FAILED";
         }
