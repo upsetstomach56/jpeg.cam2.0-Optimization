@@ -286,6 +286,11 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
 
     JSAMPROW rpx[1];
 
+    long long fast_read_ms = 0;
+    long long fast_process_ms = 0;
+    long long fast_wait_ms = 0;
+    long long fast_write_ms = 0;
+
     bool row_stream_mode = (bloom <= 0 && halation <= 0 && advancedGrainExperimental != 1);
     bool use_fast_yuv_texture_chunked = use_fast_yuv_texture && !applyCrop;
     if (row_stream_mode) {
@@ -297,11 +302,13 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
             while (cd.output_scanline < cd.output_height) {
                 int ay = cd.output_scanline;
                 int rows_read = 0;
+                long long read_start_ms = get_time_ms();
                 while (rows_read < CHK && cd.output_scanline < cd.output_height) {
                     JDIMENSION got = jpeg_read_scanlines(&cd, &r[rows_read], CHK - rows_read);
                     if (got == 0) break;
                     rows_read += (int)got;
                 }
+                fast_read_ms += get_time_ms() - read_start_ms;
                 if (rows_read <= 0) break;
 
                 int active_workers = worker_count;
@@ -343,22 +350,28 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
                 }
 
                 // Process first chunk on the main thread
+                long long process_start_ms = get_time_ms();
                 process_yuv_texture_fast_rows(&tasks[0]);
+                fast_process_ms += get_time_ms() - process_start_ms;
 
                 if (active_workers > 1) {
+                    long long wait_start_ms = get_time_ms();
                     pthread_mutex_lock(&g_pool.lock);
                     while (g_pool.completed_workers < g_pool.active_workers) {
                         pthread_cond_wait(&g_pool.cond_done, &g_pool.lock);
                     }
                     pthread_mutex_unlock(&g_pool.lock);
+                    fast_wait_ms += get_time_ms() - wait_start_ms;
                 }
 
                 int rows_written = 0;
+                long long write_start_ms = get_time_ms();
                 while (rows_written < rows_read) {
                     JDIMENSION wrote = jpeg_write_scanlines(&cc, &r[rows_written], rows_read - rows_written);
                     if (wrote == 0) break;
                     rows_written += (int)wrote;
                 }
+                fast_write_ms += get_time_ms() - write_start_ms;
             }
         } else {
             while (cd.output_scanline < cd.output_height) {
@@ -432,13 +445,17 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
     int logged_height = cd.output_height;
     free(rb); free(ob); jpeg_finish_compress(&cc); jpeg_destroy_compress(&cc); jpeg_finish_decompress(&cd); jpeg_destroy_decompress(&cd); fclose(inf); fclose(ouf);
     finish_done_ms = get_time_ms();
-    LOGD("TIMING processImage total=%lldms open=%lldms decodeSetup=%lldms encodeSetup=%lldms bufferSetup=%lldms rows=%lldms finish=%lldms path=%s scale=%d size=%dx%d visibleRows=%d crop=%d grainEngine=%d jpegQuality=%d cores=%d rowStream=%d fastYuvTexture=%d",
+    LOGD("TIMING processImage total=%lldms open=%lldms decodeSetup=%lldms encodeSetup=%lldms bufferSetup=%lldms rows=%lldms readRows=%lldms processRows=%lldms waitRows=%lldms writeRows=%lldms finish=%lldms path=%s scale=%d size=%dx%d visibleRows=%d crop=%d grainEngine=%d jpegQuality=%d cores=%d rowStream=%d fastYuvTexture=%d",
          finish_done_ms - st,
          open_done_ms - st,
          decode_setup_done_ms - open_done_ms,
          encode_setup_done_ms - decode_setup_done_ms,
          buffer_setup_done_ms - encode_setup_done_ms,
          processing_done_ms - buffer_setup_done_ms,
+         fast_read_ms,
+         fast_process_ms,
+         fast_wait_ms,
+         fast_write_ms,
          finish_done_ms - processing_done_ms,
          use_rgb ? "RGB" : "YUV",
          scaleDenom,
@@ -451,15 +468,19 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
          numCores,
          row_stream_mode ? 1 : 0,
          use_fast_yuv_texture ? 1 : 0);
-    char timing_line[512];
+    char timing_line[768];
     snprintf(timing_line, sizeof(timing_line),
-         "TIMING processImage total=%lldms open=%lldms decodeSetup=%lldms encodeSetup=%lldms bufferSetup=%lldms rows=%lldms finish=%lldms path=%s scale=%d size=%dx%d visibleRows=%d crop=%d grainEngine=%d jpegQuality=%d cores=%d rowStream=%d fastYuvTexture=%d",
+         "TIMING processImage total=%lldms open=%lldms decodeSetup=%lldms encodeSetup=%lldms bufferSetup=%lldms rows=%lldms readRows=%lldms processRows=%lldms waitRows=%lldms writeRows=%lldms finish=%lldms path=%s scale=%d size=%dx%d visibleRows=%d crop=%d grainEngine=%d jpegQuality=%d cores=%d rowStream=%d fastYuvTexture=%d",
          finish_done_ms - st,
          open_done_ms - st,
          decode_setup_done_ms - open_done_ms,
          encode_setup_done_ms - decode_setup_done_ms,
          buffer_setup_done_ms - encode_setup_done_ms,
          processing_done_ms - buffer_setup_done_ms,
+         fast_read_ms,
+         fast_process_ms,
+         fast_wait_ms,
+         fast_write_ms,
          finish_done_ms - processing_done_ms,
          use_rgb ? "RGB" : "YUV",
          scaleDenom,
