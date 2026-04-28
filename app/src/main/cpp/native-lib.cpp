@@ -232,7 +232,7 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
         && grain > 0 && colorChrome == 0 && chromeBlue == 0 && subtractiveSat == 0
         && bloom <= 0 && halation == 0 && vignette == 0);
 
-    int CHK = (use_fast_yuv_texture_candidate && !applyCrop) ? 192 : 64;
+    int CHK = (use_fast_yuv_texture_candidate && !applyCrop) ? 128 : 64;
     int BUF = CHK + 20;
 
     unsigned char* rb = (unsigned char*)malloc(BUF*rs);
