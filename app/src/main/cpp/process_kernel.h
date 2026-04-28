@@ -1397,46 +1397,86 @@ inline void process_row_yuv_texture_fast(
 
     uint8_t* p = row;
     int texX = (grainTransform & 1) ? texPeriodMask : 0;
-    for (int x = 0; x < width; x++, p += 3) {
-        int oldY = p[0];
-        int outY = fastLut.tone[oldY];
-        int cb = p[1] - 128;
-        int cr = p[2] - 128;
+    if (is_1024_grain) {
+        for (int x = 0; x < width; x++, p += 3) {
+            int oldY = p[0];
+            int outY = fastLut.tone[oldY];
+            int cb = p[1] - 128;
+            int cr = p[2] - 128;
 
-        if (fastLut.changed[oldY]) {
-            int r256 = fastLut.ratio256[oldY];
-            cb = (cb * r256) >> 8;
-            cr = (cr * r256) >> 8;
+            if (fastLut.changed[oldY]) {
+                int r256 = fastLut.ratio256[oldY];
+                cb = (cb * r256) >> 8;
+                cr = (cr * r256) >> 8;
+            }
+
+            int env = fastLut.grainEnv[oldY];
+            if (env > 0) {
+                const uint8_t* gRGB = sample_tex_ptr_nearest_1024(externalGrainTexture, texX, texY);
+
+                int r = outY + ((cr * 359) >> 8);
+                int g = outY - ((cb * 88 + cr * 183) >> 8);
+                int b = outY + ((cb * 454) >> 8);
+
+                int blendedR = blend_overlay_cached(r, gRGB[0]);
+                int blendedG = blend_overlay_cached(g, gRGB[1]);
+                int blendedB = blend_overlay_cached(b, gRGB[2]);
+
+                int mix = fastLut.grainMix[oldY];
+                r = r + (((blendedR - r) * mix) >> 8);
+                g = g + (((blendedG - g) * mix) >> 8);
+                b = b + (((blendedB - b) * mix) >> 8);
+
+                outY = (r * 77 + g * 150 + b * 29) >> 8;
+                cb = ((-38 * r - 74 * g + 112 * b) >> 8);
+                cr = ((112 * r - 94 * g - 18 * b) >> 8);
+            }
+
+            p[0] = (uint8_t)CLAMP(outY);
+            p[1] = (uint8_t)CLAMP(128 + cb);
+            p[2] = (uint8_t)CLAMP(128 + cr);
+            texX = (texX + texStep) & texPeriodMask;
         }
+    } else {
+        for (int x = 0; x < width; x++, p += 3) {
+            int oldY = p[0];
+            int outY = fastLut.tone[oldY];
+            int cb = p[1] - 128;
+            int cr = p[2] - 128;
 
-        int env = fastLut.grainEnv[oldY];
-        if (env > 0) {
-            const uint8_t* gRGB = is_1024_grain
-                ? sample_tex_ptr_nearest_1024(externalGrainTexture, texX, texY)
-                : sample_tex_ptr_nearest_512_xor(externalGrainTexture, texX, texY);
+            if (fastLut.changed[oldY]) {
+                int r256 = fastLut.ratio256[oldY];
+                cb = (cb * r256) >> 8;
+                cr = (cr * r256) >> 8;
+            }
 
-            int r = outY + ((cr * 359) >> 8);
-            int g = outY - ((cb * 88 + cr * 183) >> 8);
-            int b = outY + ((cb * 454) >> 8);
+            int env = fastLut.grainEnv[oldY];
+            if (env > 0) {
+                const uint8_t* gRGB = sample_tex_ptr_nearest_512_xor(externalGrainTexture, texX, texY);
 
-            int blendedR = blend_overlay_cached(r, gRGB[0]);
-            int blendedG = blend_overlay_cached(g, gRGB[1]);
-            int blendedB = blend_overlay_cached(b, gRGB[2]);
+                int r = outY + ((cr * 359) >> 8);
+                int g = outY - ((cb * 88 + cr * 183) >> 8);
+                int b = outY + ((cb * 454) >> 8);
 
-            int mix = fastLut.grainMix[oldY];
-            r = r + (((blendedR - r) * mix) >> 8);
-            g = g + (((blendedG - g) * mix) >> 8);
-            b = b + (((blendedB - b) * mix) >> 8);
+                int blendedR = blend_overlay_cached(r, gRGB[0]);
+                int blendedG = blend_overlay_cached(g, gRGB[1]);
+                int blendedB = blend_overlay_cached(b, gRGB[2]);
 
-            outY = (r * 77 + g * 150 + b * 29) >> 8;
-            cb = ((-38 * r - 74 * g + 112 * b) >> 8);
-            cr = ((112 * r - 94 * g - 18 * b) >> 8);
+                int mix = fastLut.grainMix[oldY];
+                r = r + (((blendedR - r) * mix) >> 8);
+                g = g + (((blendedG - g) * mix) >> 8);
+                b = b + (((blendedB - b) * mix) >> 8);
+
+                outY = (r * 77 + g * 150 + b * 29) >> 8;
+                cb = ((-38 * r - 74 * g + 112 * b) >> 8);
+                cr = ((112 * r - 94 * g - 18 * b) >> 8);
+            }
+
+            p[0] = (uint8_t)CLAMP(outY);
+            p[1] = (uint8_t)CLAMP(128 + cb);
+            p[2] = (uint8_t)CLAMP(128 + cr);
+            texX = (texX + texStep) & texPeriodMask;
         }
-
-        p[0] = (uint8_t)CLAMP(outY);
-        p[1] = (uint8_t)CLAMP(128 + cb);
-        p[2] = (uint8_t)CLAMP(128 + cr);
-        texX = (texX + texStep) & texPeriodMask;
     }
 }
 
