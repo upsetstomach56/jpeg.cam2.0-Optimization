@@ -1359,7 +1359,6 @@ struct YuvTextureFastLut {
     uint8_t grainEnv[256];
     uint8_t grainMix[256];
     uint16_t ratio256[256];
-    int16_t chroma[256][256];
 };
 
 inline void build_yuv_texture_fast_lut(
@@ -1386,14 +1385,6 @@ inline void build_yuv_texture_fast_lut(
         out.grainEnv[oldY] = (uint8_t)grain_amount_mask(outY);
         out.grainMix[oldY] = (uint8_t)((texture_base_mix * out.grainEnv[oldY]) >> 8);
         out.ratio256[oldY] = (uint16_t)((outY * 256) / (oldY == 0 ? 1 : oldY));
-
-        for (int c = 0; c < 256; c++) {
-            int chroma = c - 128;
-            if (out.changed[oldY]) {
-                chroma = (chroma * out.ratio256[oldY]) >> 8;
-            }
-            out.chroma[oldY][c] = (int16_t)chroma;
-        }
     }
 }
 
@@ -1415,9 +1406,14 @@ inline void process_row_yuv_texture_fast(
     for (int x = 0; x < width; x++, p += 3) {
         int oldY = p[0];
         int outY = fastLut.tone[oldY];
-        const int16_t* chroma = fastLut.chroma[oldY];
-        int cb = chroma[p[1]];
-        int cr = chroma[p[2]];
+        int cb = p[1] - 128;
+        int cr = p[2] - 128;
+
+        if (fastLut.changed[oldY]) {
+            int r256 = fastLut.ratio256[oldY];
+            cb = (cb * r256) >> 8;
+            cr = (cr * r256) >> 8;
+        }
 
         int env = fastLut.grainEnv[oldY];
         if (env > 0) {
