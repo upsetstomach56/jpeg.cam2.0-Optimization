@@ -202,6 +202,7 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
     cd.scale_num = 1;
     cd.scale_denom = scaleDenom;
     cd.out_color_space = use_rgb ? JCS_RGB : JCS_YCbCr;
+    cd.dct_method = JDCT_IFAST;
     jpeg_start_decompress(&cd);
     decode_setup_done_ms = get_time_ms();
 
@@ -211,7 +212,9 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
     
     int fh = cd.output_height, sk = 0; if(applyCrop){ fh=(int)(cd.output_width/2.71f); sk=(cd.output_height-fh)/2; }
     cc.image_width = cd.output_width; cc.image_height = fh; cc.input_components = 3; cc.in_color_space = use_rgb ? JCS_RGB : JCS_YCbCr;
-    jpeg_set_defaults(&cc); jpeg_set_quality(&cc, jpegQuality, TRUE); 
+    jpeg_set_defaults(&cc);
+    cc.dct_method = JDCT_IFAST;
+    jpeg_set_quality(&cc, jpegQuality, TRUE);
     
     // --- COPY ALL MARKERS BACK (Fixes Review Error) ---
     jpeg_start_compress(&cc, TRUE);
