@@ -162,7 +162,7 @@ public class ImageProcessor {
                 if (scale == 4) {
                     finalJpegQuality = Math.min(85, this.jpegQuality);
                 } else if (scale == 2) {
-                    finalJpegQuality = Math.min(90, this.jpegQuality);
+                    finalJpegQuality = Math.min(82, this.jpegQuality);
                 }
                 outputReadyMs = System.currentTimeMillis();
 

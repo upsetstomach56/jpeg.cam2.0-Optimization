@@ -206,6 +206,8 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
     cd.scale_denom = scaleDenom;
     cd.out_color_space = use_rgb ? JCS_RGB : JCS_YCbCr;
     cd.dct_method = JDCT_IFAST;
+    cd.do_fancy_upsampling = FALSE;
+    cd.do_block_smoothing = FALSE;
     jpeg_start_decompress(&cd);
     decode_setup_done_ms = get_time_ms();
 
