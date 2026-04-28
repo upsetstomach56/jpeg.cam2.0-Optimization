@@ -186,7 +186,7 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
     long long finish_done_ms = st;
     const char *ifn = env->GetStringUTFChars(inPath, NULL); const char *ofn = env->GetStringUTFChars(outPath, NULL);
     FILE *inf = fopen(ifn, "rb"), *ouf = fopen(ofn, "wb");
-    const int stdioBufferSize = 64 * 1024;
+    const int stdioBufferSize = 256 * 1024;
     open_done_ms = get_time_ms();
     if(!inf||!ouf){ if(inf)fclose(inf); if(ouf)fclose(ouf); env->ReleaseStringUTFChars(inPath,ifn); env->ReleaseStringUTFChars(outPath,ofn); return JNI_FALSE; }
     setvbuf(inf, NULL, _IOFBF, stdioBufferSize);
