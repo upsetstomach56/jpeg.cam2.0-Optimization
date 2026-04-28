@@ -2455,7 +2455,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     @Override public void    setProcessingFrequency(int v)   { processingFrequency = normalizeProcessingFrequency(v); saveAppPreferences(); updateMainHUD(); }
     @Override public void    setPrefDiptych(boolean v)      {
         if (diptychManager != null) {
-            diptychManager.setEnabled(v);
+            try {
+                diptychManager.setEnabled(v);
+            } catch (Throwable t) {
+                Log.e("JPEG.CAM", "Failed to toggle diptych mode", t);
+                try {
+                    diptychManager.setVisibility(false);
+                } catch (Throwable ignored) {}
+            }
             if (!v && cameraManager != null && cameraManager.getCamera() != null) {
                 try {
                     android.hardware.Camera.Parameters p = cameraManager.getCamera().getParameters();
@@ -2466,7 +2473,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 } catch (Exception ignored) {}
             }
         }
-        updateMainHUD();
+        if (menuController != null && menuController.isOpen()) {
+            updateDiptychPreviewWindow();
+        } else {
+            updateMainHUD();
+        }
     }
     @Override public void forceProcessQueuedPhotos() {
         startQueuedProcessing(processingFrequency == PROCESSING_FREQUENCY_MANUAL);

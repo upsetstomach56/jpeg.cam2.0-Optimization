@@ -34,9 +34,18 @@ public class DiptychManager {
     }
 
     public void setEnabled(boolean enabled) {
-        this.isEnabled = enabled;
-        if (!enabled) reset();
-        setVisibility(enabled);
+        resetState();
+        try {
+            setVisibility(enabled);
+            this.isEnabled = enabled;
+        } catch (Throwable t) {
+            this.isEnabled = false;
+            try {
+                setVisibility(false);
+            } catch (Throwable ignored) {}
+            Log.e("JPEG.CAM", "Failed to toggle diptych overlay", t);
+        }
+        if (activity != null) activity.updateDiptychPreviewWindow();
     }
 
     public boolean isEnabled() { return isEnabled; }
@@ -46,11 +55,15 @@ public class DiptychManager {
     }
 
     public void reset() {
+        resetState();
+        if (activity != null) activity.updateDiptychPreviewWindow();
+    }
+
+    private void resetState() {
         state = STATE_NEED_FIRST;
         leftFilename = null;
         rightFilename = null;
         if (overlayView != null) overlayView.setState(STATE_NEED_FIRST);
-        if (activity != null) activity.updateDiptychPreviewWindow();
     }
 
     public int getState() { return state; }
