@@ -872,6 +872,10 @@ inline int blend_overlay_cached(int base, int blend) {
     return overlayBlendLut[(CLAMP(base) << 8) | CLAMP(blend)];
 }
 
+inline int blend_overlay_cached_texture(int base, uint8_t blend) {
+    return overlayBlendLut[(CLAMP(base) << 8) | blend];
+}
+
 // High-fidelity sampler for 512x512 textures with built-in XOR mirroring.
 inline void sample_tex_bilinear_512_xor(const uint8_t* tex, int x_fp8, int y_fp8, int* outRGB) {
     int px0 = x_fp8 >> 8;
@@ -1419,9 +1423,9 @@ inline void process_row_yuv_texture_fast(
             int g = outY - ((cb * 88 + cr * 183) >> 8);
             int b = outY + ((cb * 454) >> 8);
 
-            int blendedR = blend_overlay_cached(r, gRGB[0]);
-            int blendedG = blend_overlay_cached(g, gRGB[1]);
-            int blendedB = blend_overlay_cached(b, gRGB[2]);
+            int blendedR = blend_overlay_cached_texture(r, gRGB[0]);
+            int blendedG = blend_overlay_cached_texture(g, gRGB[1]);
+            int blendedB = blend_overlay_cached_texture(b, gRGB[2]);
 
             int mix = fastLut.grainMix[oldY];
             r = r + (((blendedR - r) * mix) >> 8);
