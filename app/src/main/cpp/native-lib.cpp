@@ -162,8 +162,16 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
     jint bloom, jint advancedGrainExperimental, jint jpegQuality,
     jboolean applyCrop, jint numCores) {
 
-    long long st = get_time_ms(); const char *ifn = env->GetStringUTFChars(inPath, NULL); const char *ofn = env->GetStringUTFChars(outPath, NULL);
+    long long st = get_time_ms();
+    long long open_done_ms = st;
+    long long decode_setup_done_ms = st;
+    long long encode_setup_done_ms = st;
+    long long buffer_setup_done_ms = st;
+    long long processing_done_ms = st;
+    long long finish_done_ms = st;
+    const char *ifn = env->GetStringUTFChars(inPath, NULL); const char *ofn = env->GetStringUTFChars(outPath, NULL);
     FILE *inf = fopen(ifn, "rb"), *ouf = fopen(ofn, "wb");
+    open_done_ms = get_time_ms();
     if(!inf||!ouf){ if(inf)fclose(inf); if(ouf)fclose(ouf); env->ReleaseStringUTFChars(inPath,ifn); env->ReleaseStringUTFChars(outPath,ofn); return JNI_FALSE; }
 
     struct jpeg_decompress_struct cd; struct my_error_mgr jd; cd.err = jpeg_std_error(&jd.pub); jd.pub.error_exit = my_error_exit;
@@ -180,6 +188,7 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
     cd.scale_denom = scaleDenom;
     cd.out_color_space = use_rgb ? JCS_RGB : JCS_YCbCr;
     jpeg_start_decompress(&cd);
+    decode_setup_done_ms = get_time_ms();
 
     struct jpeg_compress_struct cc; struct my_error_mgr jc; cc.err = jpeg_std_error(&jc.pub); jc.pub.error_exit = my_error_exit;
     if(setjmp(jc.setjmp_buffer)){ jpeg_destroy_compress(&cc); jpeg_destroy_decompress(&cd); fclose(inf); fclose(ouf); env->ReleaseStringUTFChars(inPath,ifn); env->ReleaseStringUTFChars(outPath,ofn); return JNI_FALSE; }
@@ -196,6 +205,7 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
         jpeg_write_marker(&cc, mark->marker, mark->data, mark->data_length);
         mark = mark->next;
     }
+    encode_setup_done_ms = get_time_ms();
 
     int rs = cd.output_width*3;
     const uint8_t* externalTex = nativeGrainTexture.empty() ? NULL : nativeGrainTexture.data();
@@ -257,6 +267,7 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
     if (use_fast_yuv_texture) {
         build_yuv_texture_fast_lut(fast_yuv_texture_lut, shadowToe, rollOff, roll, grain);
     }
+    buffer_setup_done_ms = get_time_ms();
 
     JSAMPROW rpx[1];
 
@@ -399,9 +410,32 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
             pr += rtp;
         }
     }
+    processing_done_ms = get_time_ms();
 
     if (work_0) { free(work_0); free(work_1); free(work_2); free(work_h); free(h_line); }
+    int logged_width = cc.image_width;
+    int logged_height = cd.output_height;
     free(rb); free(ob); jpeg_finish_compress(&cc); jpeg_destroy_compress(&cc); jpeg_finish_decompress(&cd); jpeg_destroy_decompress(&cd); fclose(inf); fclose(ouf); env->ReleaseStringUTFChars(inPath,ifn); env->ReleaseStringUTFChars(outPath,ofn);
+    finish_done_ms = get_time_ms();
+    LOGD("TIMING processImage total=%lldms open=%lldms decodeSetup=%lldms encodeSetup=%lldms bufferSetup=%lldms rows=%lldms finish=%lldms path=%s scale=%d size=%dx%d visibleRows=%d crop=%d grainEngine=%d jpegQuality=%d cores=%d rowStream=%d fastYuvTexture=%d",
+         finish_done_ms - st,
+         open_done_ms - st,
+         decode_setup_done_ms - open_done_ms,
+         encode_setup_done_ms - decode_setup_done_ms,
+         buffer_setup_done_ms - encode_setup_done_ms,
+         processing_done_ms - buffer_setup_done_ms,
+         finish_done_ms - processing_done_ms,
+         use_rgb ? "RGB" : "YUV",
+         scaleDenom,
+         logged_width,
+         logged_height,
+         fh,
+         applyCrop ? 1 : 0,
+         advancedGrainExperimental,
+         jpegQuality,
+         numCores,
+         row_stream_mode ? 1 : 0,
+         use_fast_yuv_texture ? 1 : 0);
     return JNI_TRUE;
 }
 

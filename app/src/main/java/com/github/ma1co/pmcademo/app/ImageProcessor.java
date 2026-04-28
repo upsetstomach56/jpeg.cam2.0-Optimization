@@ -82,6 +82,18 @@ public class ImageProcessor {
         @Override protected void onPreExecute() { mCallback.onProcessStarted(); }
 
         @Override protected String doInBackground(String... params) {
+            long taskStartMs = System.currentTimeMillis();
+            long fileReadyMs = taskStartMs;
+            long lutReadyMs = taskStartMs;
+            long outputReadyMs = taskStartMs;
+            long textureReadyMs = taskStartMs;
+            long nativeDoneMs = taskStartMs;
+            int scale = -1;
+            int finalJpegQuality = this.jpegQuality;
+            int finalGrainSize = p.grainSize;
+            int finalBloom = p.bloom;
+            int cxxGrainEngine = p.advancedGrainExperimental;
+            int numCores = 1;
             try {
                 File original = new File(params[0]);
                 if (!original.exists()) return "ERR";
@@ -95,10 +107,12 @@ public class ImageProcessor {
                         Thread.sleep(100); timeout++;
                     }
                 }
+                fileReadyMs = System.currentTimeMillis();
 
                 if (lutPath != null || lutName != null) {
                     if (!mEngine.loadLut(lutPath, lutName)) return "FAILED";
                 }
+                lutReadyMs = System.currentTimeMillis();
 
                 File dir = new File(outDir);
                 if (!dir.exists()) dir.mkdirs();
@@ -106,21 +120,18 @@ public class ImageProcessor {
                 File outFile = new File(dir, original.getName());
 
                 // 0=1/4 RES (4), 1=HALF RES (2), 2=FULL RES (1)
-                int scale = (qualityIdx == 0) ? 4 : (qualityIdx == 2 ? 1 : 2);
+                scale = (qualityIdx == 0) ? 4 : (qualityIdx == 2 ? 1 : 2);
 
-                int finalJpegQuality = this.jpegQuality;
                 // Still enforce safe limits for downscaled proxies to save RAM
                 if (scale == 4) {
                     finalJpegQuality = Math.min(85, this.jpegQuality);
                 } else if (scale == 2) {
                     finalJpegQuality = Math.min(90, this.jpegQuality);
                 }
+                outputReadyMs = System.currentTimeMillis();
 
                 // --- DIPTYCH COMPENSATOR ---
                 // Safely steps down physical effects to account for the smaller 6MP canvas
-                int finalGrainSize = p.grainSize;
-                int finalBloom = p.bloom;
-                
                 if (isDiptych) {
                     finalGrainSize = Math.max(0, p.grainSize - 1);
                     
@@ -132,17 +143,17 @@ public class ImageProcessor {
                     finalBloom = bloomMap[Math.max(0, currentBloomIdx - 1)];
                 }
 
-                int cxxGrainEngine = p.advancedGrainExperimental;
                 if (p.grain > 0) {
                     File texFile = MenuController.getGrainTextureFile(finalGrainSize);
                     if (mEngine.loadGrainTexture(texFile)) {
                         cxxGrainEngine = 2;
                     }
                 }
+                textureReadyMs = System.currentTimeMillis();
 
                 // Use the CPU Engine toggle from Settings (page 6) to decide thread count.
                 RecipeManager rm = ((MainActivity) mContext).getRecipeManager();
-                int numCores = rm.isMultiCoreEnabled() ? Runtime.getRuntime().availableProcessors() : 1;
+                numCores = rm.isMultiCoreEnabled() ? Runtime.getRuntime().availableProcessors() : 1;
                 Log.d("JPEG.CAM", "Processing with " + numCores + " core(s). MultiCore=" + rm.isMultiCoreEnabled());
 
                 boolean success = mEngine.applyLutToJpeg(
@@ -153,6 +164,23 @@ public class ImageProcessor {
                     cxxGrainEngine,
                     finalJpegQuality, 
                     applyCrop, numCores);  // <--- ADDED numCores HERE
+                nativeDoneMs = System.currentTimeMillis();
+                Log.d("COOKBOOK", "TIMING processJpeg total=" + (nativeDoneMs - taskStartMs)
+                        + "ms waitForFile=" + (fileReadyMs - taskStartMs)
+                        + "ms lutLoad=" + (lutReadyMs - fileReadyMs)
+                        + "ms outputSetup=" + (outputReadyMs - lutReadyMs)
+                        + "ms textureLoad=" + (textureReadyMs - outputReadyMs)
+                        + "ms nativeCall=" + (nativeDoneMs - textureReadyMs)
+                        + "ms scale=" + scale
+                        + " qualityIdx=" + qualityIdx
+                        + " jpegQuality=" + finalJpegQuality
+                        + " grainEngine=" + cxxGrainEngine
+                        + " grainSize=" + finalGrainSize
+                        + " bloom=" + finalBloom
+                        + " crop=" + applyCrop
+                        + " diptych=" + isDiptych
+                        + " cores=" + numCores
+                        + " success=" + success);
                 if (success) {
                     return "SAVED";
                 }
