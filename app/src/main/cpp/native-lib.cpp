@@ -186,8 +186,11 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
     long long finish_done_ms = st;
     const char *ifn = env->GetStringUTFChars(inPath, NULL); const char *ofn = env->GetStringUTFChars(outPath, NULL);
     FILE *inf = fopen(ifn, "rb"), *ouf = fopen(ofn, "wb");
+    const int stdioBufferSize = 64 * 1024;
     open_done_ms = get_time_ms();
     if(!inf||!ouf){ if(inf)fclose(inf); if(ouf)fclose(ouf); env->ReleaseStringUTFChars(inPath,ifn); env->ReleaseStringUTFChars(outPath,ofn); return JNI_FALSE; }
+    setvbuf(inf, NULL, _IOFBF, stdioBufferSize);
+    setvbuf(ouf, NULL, _IOFBF, stdioBufferSize);
 
     struct jpeg_decompress_struct cd; struct my_error_mgr jd; cd.err = jpeg_std_error(&jd.pub); jd.pub.error_exit = my_error_exit;
     if(setjmp(jd.setjmp_buffer)){ jpeg_destroy_decompress(&cd); fclose(inf); fclose(ouf); env->ReleaseStringUTFChars(inPath,ifn); env->ReleaseStringUTFChars(outPath,ofn); return JNI_FALSE; }
@@ -448,7 +451,7 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
     int logged_height = cd.output_height;
     free(rb); free(ob); jpeg_finish_compress(&cc); jpeg_destroy_compress(&cc); jpeg_finish_decompress(&cd); jpeg_destroy_decompress(&cd); fclose(inf); fclose(ouf);
     finish_done_ms = get_time_ms();
-    LOGD("TIMING processImage total=%lldms open=%lldms decodeSetup=%lldms encodeSetup=%lldms bufferSetup=%lldms rows=%lldms readRows=%lldms processRows=%lldms waitRows=%lldms writeRows=%lldms finish=%lldms path=%s scale=%d size=%dx%d visibleRows=%d crop=%d grainEngine=%d jpegQuality=%d cores=%d rowStream=%d fastYuvTexture=%d rowChunk=%d",
+    LOGD("TIMING processImage total=%lldms open=%lldms decodeSetup=%lldms encodeSetup=%lldms bufferSetup=%lldms rows=%lldms readRows=%lldms processRows=%lldms waitRows=%lldms writeRows=%lldms finish=%lldms path=%s scale=%d size=%dx%d visibleRows=%d crop=%d grainEngine=%d jpegQuality=%d cores=%d rowStream=%d fastYuvTexture=%d rowChunk=%d stdioBuf=%d",
          finish_done_ms - st,
          open_done_ms - st,
          decode_setup_done_ms - open_done_ms,
@@ -471,10 +474,11 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
          numCores,
          row_stream_mode ? 1 : 0,
          use_fast_yuv_texture ? 1 : 0,
-         CHK);
+         CHK,
+         stdioBufferSize);
     char timing_line[768];
     snprintf(timing_line, sizeof(timing_line),
-         "TIMING processImage total=%lldms open=%lldms decodeSetup=%lldms encodeSetup=%lldms bufferSetup=%lldms rows=%lldms readRows=%lldms processRows=%lldms waitRows=%lldms writeRows=%lldms finish=%lldms path=%s scale=%d size=%dx%d visibleRows=%d crop=%d grainEngine=%d jpegQuality=%d cores=%d rowStream=%d fastYuvTexture=%d rowChunk=%d",
+         "TIMING processImage total=%lldms open=%lldms decodeSetup=%lldms encodeSetup=%lldms bufferSetup=%lldms rows=%lldms readRows=%lldms processRows=%lldms waitRows=%lldms writeRows=%lldms finish=%lldms path=%s scale=%d size=%dx%d visibleRows=%d crop=%d grainEngine=%d jpegQuality=%d cores=%d rowStream=%d fastYuvTexture=%d rowChunk=%d stdioBuf=%d",
          finish_done_ms - st,
          open_done_ms - st,
          decode_setup_done_ms - open_done_ms,
@@ -497,7 +501,8 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
          numCores,
          row_stream_mode ? 1 : 0,
          use_fast_yuv_texture ? 1 : 0,
-         CHK);
+         CHK,
+         stdioBufferSize);
     append_speed_log_near_output(ofn, timing_line);
     env->ReleaseStringUTFChars(inPath,ifn); env->ReleaseStringUTFChars(outPath,ofn);
     return JNI_TRUE;
