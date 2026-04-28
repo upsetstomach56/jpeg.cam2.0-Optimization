@@ -791,14 +791,29 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 
     private void triggerLutPreload() {
         RTLProfile p = recipeManager.getCurrentProfile();
-        if (p.lutIndex == 0) {
-            // No LUT selected, engine is ready immediately for other effects
+        if (p == null) {
             isReady = true;
             updateMainHUD();
             maybeAutoProcessQueuedPhotos();
             return;
         }
-        mProcessor.triggerLutPreload(recipeManager.getRecipePaths().get(p.lutIndex), recipeManager.getRecipeNames().get(p.lutIndex));
+
+        String lutPath = null;
+        String lutName = null;
+        if (p.lutIndex > 0 && p.lutIndex < recipeManager.getRecipePaths().size()
+                && p.lutIndex < recipeManager.getRecipeNames().size()) {
+            lutPath = recipeManager.getRecipePaths().get(p.lutIndex);
+            lutName = recipeManager.getRecipeNames().get(p.lutIndex);
+        }
+
+        if (lutPath == null && p.grain <= 0) {
+            // No LUT or texture selected, engine is ready immediately for other effects.
+            isReady = true;
+            updateMainHUD();
+            maybeAutoProcessQueuedPhotos();
+            return;
+        }
+        mProcessor.triggerLutPreload(lutPath, lutName, p.grain, p.grainSize);
     }
 
     private void refreshRecipes() {

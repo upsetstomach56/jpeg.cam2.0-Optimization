@@ -24,8 +24,8 @@ public class ImageProcessor {
         this.mEngine = new LutEngine();
     }
 
-    public void triggerLutPreload(String lutPath, String lutName) {
-        new PreloadLutTask().execute(lutPath, lutName);
+    public void triggerLutPreload(String lutPath, String lutName, int grain, int grainSize) {
+        new PreloadLutTask(lutPath, lutName, grain, grainSize).execute();
     }
 
     public void processJpeg(String originalPath, String outDirPath, int qualityIndex, int jpegQuality, RTLProfile p, boolean applyCrop, boolean isDiptych) {
@@ -47,10 +47,29 @@ public class ImageProcessor {
                 scannerStartedMs, detectedMs, stableMs, scannerAttempts).execute(originalPath);
     }
 
-    private class PreloadLutTask extends AsyncTask<String, Void, Boolean> {
+    private class PreloadLutTask extends AsyncTask<Void, Void, Boolean> {
+        private String lutPath;
+        private String lutName;
+        private int grain;
+        private int grainSize;
+
+        public PreloadLutTask(String lutPath, String lutName, int grain, int grainSize) {
+            this.lutPath = lutPath;
+            this.lutName = lutName;
+            this.grain = grain;
+            this.grainSize = grainSize;
+        }
+
         @Override protected void onPreExecute() { mCallback.onPreloadStarted(); }
-        @Override protected Boolean doInBackground(String... params) {
-            return mEngine.loadLut(new File(params[0]), params[1]);
+        @Override protected Boolean doInBackground(Void... params) {
+            if (lutPath != null || lutName != null) {
+                if (!mEngine.loadLut(lutPath, lutName)) return false;
+            }
+            if (grain > 0) {
+                File texFile = MenuController.getGrainTextureFile(grainSize);
+                return mEngine.loadGrainTexture(texFile);
+            }
+            return true;
         }
         @Override protected void onPostExecute(Boolean success) { mCallback.onPreloadFinished(success); }
     }
