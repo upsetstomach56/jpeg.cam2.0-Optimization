@@ -975,10 +975,12 @@ inline const uint8_t* sample_tex_ptr_nearest_1024_transform(const uint8_t* tex, 
 }
 
 inline const uint8_t* sample_tex_ptr_nearest_512_xor(const uint8_t* tex, int px, int py) {
+    int pxSector = px >> 9;
+    int pySector = py >> 9;
     int tx = px & 511;
     int ty = py & 511;
-    if (((px >> 9) ^ (py >> 9)) & 1) tx = 511 - tx;
-    if ((((px >> 9) * 3) ^ (py >> 9)) & 2) ty = 511 - ty;
+    if ((pxSector ^ pySector) & 1) tx = 511 - tx;
+    if (((pxSector * 3) ^ pySector) & 2) ty = 511 - ty;
     return tex + ((ty * 512 + tx) * 3);
 }
 
