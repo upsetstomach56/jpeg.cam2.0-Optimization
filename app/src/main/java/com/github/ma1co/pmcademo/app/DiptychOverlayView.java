@@ -82,11 +82,23 @@ public class DiptychOverlayView extends View {
         int mid = w / 2;
 
         if (state == DiptychManager.STATE_NEED_FIRST) {
-            int cy = h / 2;
-            int crossLen = 14;
+            int quarter = w / 4;
+            int mg = Math.max(8, w / 32);
+            int bl = h / 10;
 
-            canvas.drawLine(mid - crossLen, cy, mid + crossLen, cy, framePaint);
-            canvas.drawLine(mid, cy - crossLen, mid, cy + crossLen, framePaint);
+            darkPaint.setAlpha(220);
+            canvas.drawRect(0, 0, quarter, h, darkPaint);
+            canvas.drawRect(w - quarter, 0, w, h, darkPaint);
+            darkPaint.setAlpha(180);
+
+            canvas.drawLine(quarter + mg, mg, quarter + mg + bl, mg, framePaint);
+            canvas.drawLine(quarter + mg, mg, quarter + mg, mg + bl, framePaint);
+            canvas.drawLine(mid + quarter - mg, mg, mid + quarter - mg - bl, mg, framePaint);
+            canvas.drawLine(mid + quarter - mg, mg, mid + quarter - mg, mg + bl, framePaint);
+            canvas.drawLine(quarter + mg, h - mg, quarter + mg + bl, h - mg, framePaint);
+            canvas.drawLine(quarter + mg, h - mg, quarter + mg, h - mg - bl, framePaint);
+            canvas.drawLine(mid + quarter - mg, h - mg, mid + quarter - mg - bl, h - mg, framePaint);
+            canvas.drawLine(mid + quarter - mg, h - mg, mid + quarter - mg, h - mg - bl, framePaint);
         } else if (state == DiptychManager.STATE_NEED_SECOND || state == DiptychManager.STATE_STITCHING) {
             if (thumbOnLeft) {
                 canvas.drawRect(0, 0, mid, h, darkPaint);
@@ -110,6 +122,8 @@ public class DiptychOverlayView extends View {
             }
         }
 
-        canvas.drawLine(mid, 0, mid, h, linePaint);
+        if (state != DiptychManager.STATE_NEED_FIRST) {
+            canvas.drawLine(mid, 0, mid, h, linePaint);
+        }
     }
 }
