@@ -188,19 +188,23 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     }
 
     public void updateDiptychPreviewWindow() {
-        if (mSurfaceView == null) return;
-        int width = getPreviewWindowWidth();
-        if (width <= 0) return;
+        try {
+            if (mSurfaceView == null) return;
+            int width = getPreviewWindowWidth();
+            if (width <= 0) return;
 
-        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(width, -1);
-        int offset = 0;
-        if (!isProcessing && diptychManager != null && diptychManager.isEnabled()
-                && diptychManager.getState() == DiptychManager.STATE_NEED_SECOND) {
-            offset = diptychManager.isThumbOnLeft() ? width / 4 : -(width / 4);
+            FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(width, -1);
+            int offset = 0;
+            if (!isProcessing && diptychManager != null && diptychManager.isEnabled()
+                    && diptychManager.getState() == DiptychManager.STATE_NEED_SECOND) {
+                offset = diptychManager.isThumbOnLeft() ? width / 4 : -(width / 4);
+            }
+            params.leftMargin = offset;
+            mSurfaceView.setLayoutParams(params);
+            mSurfaceView.invalidate();
+        } catch (Throwable t) {
+            Log.e("JPEG.CAM", "Failed to update double exposure preview window", t);
         }
-        params.leftMargin = offset;
-        mSurfaceView.setLayoutParams(params);
-        mSurfaceView.invalidate();
     }
 
     public static final int DIAL_MODE_SHUTTER = 0;

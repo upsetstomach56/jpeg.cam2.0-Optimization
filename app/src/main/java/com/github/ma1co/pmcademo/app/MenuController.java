@@ -1103,7 +1103,7 @@ public class MenuController {
 
             String creativeMode = "OFF";
             if (host.isPrefCinemaMattes()) creativeMode = "XPAN CROP";
-            else if (host.isPrefDiptych()) creativeMode = "DIPTYCH";
+            else if (host.isPrefDiptych()) creativeMode = "DOUBLE EXP";
 
             setRow(0, "SW Global Resolution", qLbls[rm.getQualityIndex()]);
             setRow(1, "Manual Focus Meter",    host.isPrefFocusMeter()   ? "ON" : "OFF");
