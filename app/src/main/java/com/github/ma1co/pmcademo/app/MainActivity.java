@@ -2453,6 +2453,19 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     @Override public void    setPrefGridLines(boolean v)    { prefShowGridLines    = v; }
     @Override public void    setPrefJpegQuality(int v)      { prefJpegQuality      = v; }
     @Override public void    setProcessingFrequency(int v)   { processingFrequency = normalizeProcessingFrequency(v); saveAppPreferences(); updateMainHUD(); }
+    private void resetDiptychFocusAreas() {
+        if (cameraManager == null || cameraManager.getCamera() == null) return;
+        try {
+            android.hardware.Camera.Parameters p = cameraManager.getCamera().getParameters();
+            if (p.getMaxNumFocusAreas() > 0) {
+                p.setFocusAreas(null);
+                cameraManager.getCamera().setParameters(p);
+            }
+        } catch (Throwable t) {
+            Log.e("JPEG.CAM", "Failed to reset diptych focus areas", t);
+        }
+    }
+
     @Override public void    setPrefDiptych(boolean v)      {
         if (diptychManager != null) {
             try {
@@ -2463,14 +2476,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                     diptychManager.setVisibility(false);
                 } catch (Throwable ignored) {}
             }
-            if (!v && cameraManager != null && cameraManager.getCamera() != null) {
-                try {
-                    android.hardware.Camera.Parameters p = cameraManager.getCamera().getParameters();
-                    if (p.getMaxNumFocusAreas() > 0) {
-                        p.setFocusAreas(null);
-                        cameraManager.getCamera().setParameters(p);
-                    }
-                } catch (Exception ignored) {}
+            if (!v && (menuController == null || !menuController.isOpen())) {
+                resetDiptychFocusAreas();
             }
         }
         if (menuController != null && menuController.isOpen()) {
@@ -2511,6 +2518,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             updateMainHUD();
             return;
         }
+        if (!isPrefDiptych()) resetDiptychFocusAreas();
         triggerLutPreload();
         applyHardwareRecipe();
         syncHardwareState();

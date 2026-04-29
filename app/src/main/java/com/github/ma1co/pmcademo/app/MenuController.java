@@ -937,7 +937,7 @@ public class MenuController {
 
         render();
         rm.savePreferences();
-        host.scheduleHardwareApply();
+        if (currentPage <= 5) host.scheduleHardwareApply();
     }
 
     private int nextProcessingFrequency(int current, int dir) {
