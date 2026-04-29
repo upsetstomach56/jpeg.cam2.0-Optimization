@@ -15,6 +15,8 @@ public class DiptychManager {
     public static final int STATE_NEED_SECOND = 1;
     public static final int STATE_STITCHING = 2;
     public static final int STATE_PROCESSING_FIRST = 3;
+    public static final int MODE_DIPTYCH = 0;
+    public static final int MODE_DOUBLE_EXPOSURE = 1;
 
     private MainActivity activity;
     private DiptychOverlayView overlayView;
@@ -24,6 +26,7 @@ public class DiptychManager {
     private String leftFilename = null;
     private String rightFilename = null;
     private boolean isEnabled = false;
+    private int mode = MODE_DIPTYCH;
 
     public DiptychManager(MainActivity activity, FrameLayout container, TextView tvTopStatus) {
         this.activity = activity;
@@ -34,6 +37,12 @@ public class DiptychManager {
     }
 
     public void setEnabled(boolean enabled) {
+        setEnabled(enabled, mode);
+    }
+
+    public void setEnabled(boolean enabled, int requestedMode) {
+        mode = requestedMode == MODE_DOUBLE_EXPOSURE ? MODE_DOUBLE_EXPOSURE : MODE_DIPTYCH;
+        if (overlayView != null) overlayView.setDoubleExposureMode(isDoubleExposureMode());
         resetState();
         try {
             setVisibility(enabled);
@@ -49,6 +58,8 @@ public class DiptychManager {
     }
 
     public boolean isEnabled() { return isEnabled; }
+    public int getMode() { return mode; }
+    public boolean isDoubleExposureMode() { return mode == MODE_DOUBLE_EXPOSURE; }
 
     public void setVisibility(boolean visible) {
         if (overlayView != null) overlayView.setVisibility(visible ? View.VISIBLE : View.GONE);
@@ -108,7 +119,7 @@ public class DiptychManager {
 
                     if (state != STATE_PROCESSING_FIRST) return;
                     final boolean thumbOnLeft = isThumbOnLeft();
-                    final Bitmap thumb = getDiptychThumbnail(originalPath, thumbOnLeft);
+                    final Bitmap thumb = getReferenceThumbnail(originalPath, thumbOnLeft);
                     activity.runOnUiThread(new Runnable() {
                         public void run() {
                             if (overlayView != null && state == STATE_PROCESSING_FIRST) {
@@ -145,7 +156,7 @@ public class DiptychManager {
     public void processFirstShot(final String gradedPath) {
         state = STATE_NEED_SECOND;
         final boolean thumbOnLeft = isThumbOnLeft();
-        final Bitmap thumb = getDiptychThumbnail(gradedPath, thumbOnLeft);
+        final Bitmap thumb = getReferenceThumbnail(gradedPath, thumbOnLeft);
         activity.runOnUiThread(new Runnable() {
             public void run() {
                 if (overlayView != null) {
@@ -155,7 +166,9 @@ public class DiptychManager {
                 activity.setProcessing(false);
                 activity.armFileScanner();
                 if (tvTopStatus != null) {
-                    tvTopStatus.setText("SHOT 1 SAVED. [L/R] TO SWAP SIDE.");
+                    tvTopStatus.setText(isDoubleExposureMode()
+                            ? "SHOT 1 SAVED. TAKE SECOND EXPOSURE."
+                            : "SHOT 1 SAVED. [L/R] TO SWAP SIDE.");
                     tvTopStatus.setTextColor(Color.GREEN);
                 }
                 activity.updateMainHUD();
@@ -172,7 +185,7 @@ public class DiptychManager {
                     overlayView.setState(STATE_STITCHING);
                 }
                 if (tvTopStatus != null) {
-                    tvTopStatus.setText("STITCHING DIPTYCH...");
+                    tvTopStatus.setText(isDoubleExposureMode() ? "BLENDING DOUBLE EXP..." : "STITCHING DIPTYCH...");
                     tvTopStatus.setTextColor(Color.YELLOW);
                 }
             }
@@ -188,6 +201,22 @@ public class DiptychManager {
                 performDiptychStitch(leftPath, rightPath, firstShotLeft, entry, scannerStartedMs, detectedMs, stableMs, scannerAttempts);
             }
         }).start();
+    }
+
+    private Bitmap getReferenceThumbnail(String path, boolean leftHalf) {
+        if (isDoubleExposureMode()) return getFullFrameThumbnail(path);
+        return getDiptychThumbnail(path, leftHalf);
+    }
+
+    private Bitmap getFullFrameThumbnail(String path) {
+        try {
+            BitmapFactory.Options opts = new BitmapFactory.Options();
+            opts.inSampleSize = 16;
+            opts.inPreferredConfig = Bitmap.Config.RGB_565;
+            return BitmapFactory.decodeFile(path, opts);
+        } catch (Throwable t) {
+            return null;
+        }
     }
 
     private Bitmap getDiptychThumbnail(String path, boolean leftHalf) {
@@ -209,22 +238,25 @@ public class DiptychManager {
         }
     }
 
+    private native boolean blendDoubleExposureNative(String p1, String p2, String out, int quality);
+
     private void performDiptychStitch(String leftPath, String rightPath, boolean firstShotLeft, final ProcessingQueueManager.Entry entry, final long scannerStartedMs, final long detectedMs, final long stableMs, final int scannerAttempts) {
         try {
             System.gc();
             File fL = new File(leftPath);
             File fR = new File(rightPath);
+            final boolean doubleExposure = isDoubleExposureMode();
 
             String originalName = fR.getName();
-            String diptychName = "DIPTYCH.JPG";
+            String diptychName = doubleExposure ? "DBLEXP.JPG" : "DIPTYCH.JPG";
             try {
                 String namePart = originalName;
                 int dotIdx = originalName.lastIndexOf(".");
                 if (dotIdx != -1) namePart = originalName.substring(0, dotIdx);
                 if (namePart.length() > 5) {
-                    diptychName = "DIP" + namePart.substring(namePart.length() - 5) + ".JPG";
+                    diptychName = (doubleExposure ? "DBL" : "DIP") + namePart.substring(namePart.length() - 5) + ".JPG";
                 } else {
-                    diptychName = "DIP" + namePart + ".JPG";
+                    diptychName = (doubleExposure ? "DBL" : "DIP") + namePart + ".JPG";
                 }
                 if (diptychName.length() > 12) {
                     diptychName = diptychName.substring(0, 8) + ".JPG";
@@ -239,7 +271,9 @@ public class DiptychManager {
                 throw new Exception("Source files missing");
             }
 
-            final boolean success = stitchDiptychNative(leftPath, rightPath, tempOut.getAbsolutePath(), firstShotLeft, activity.getPrefJpegQuality());
+            final boolean success = doubleExposure
+                    ? blendDoubleExposureNative(leftPath, rightPath, tempOut.getAbsolutePath(), activity.getPrefJpegQuality())
+                    : stitchDiptychNative(leftPath, rightPath, tempOut.getAbsolutePath(), firstShotLeft, activity.getPrefJpegQuality());
 
             if (success && tempOut.exists()) {
                 activity.runOnUiThread(new Runnable() {

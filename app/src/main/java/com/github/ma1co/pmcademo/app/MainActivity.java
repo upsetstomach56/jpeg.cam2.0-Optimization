@@ -196,6 +196,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(width, -1);
             int offset = 0;
             if (!isProcessing && diptychManager != null && diptychManager.isEnabled()
+                    && !diptychManager.isDoubleExposureMode()
                     && diptychManager.getState() == DiptychManager.STATE_NEED_SECOND) {
                 offset = diptychManager.isThumbOnLeft() ? width / 4 : -(width / 4);
             }
@@ -365,6 +366,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         prefJpegQuality = prefs.getInt("jpegQuality", 95);
         processingFrequency = normalizeProcessingFrequency(prefs.getInt("processingFrequency", 1));
         boolean prefShowDiptych = prefs.getBoolean("diptychEnabled", false);
+        boolean prefShowDoubleExposure = prefs.getBoolean("doubleExposureEnabled", false);
         processingQueueManager = new ProcessingQueueManager();
 
         cameraManager = new SonyCameraManager(this);
@@ -401,7 +403,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 
         buildUI(rootLayout);
         setContentView(rootLayout);
-        if (prefShowDiptych && diptychManager != null) diptychManager.setEnabled(true);
+        if (diptychManager != null) {
+            if (prefShowDoubleExposure) diptychManager.setEnabled(true, DiptychManager.MODE_DOUBLE_EXPOSURE);
+            else if (prefShowDiptych) diptychManager.setEnabled(true, DiptychManager.MODE_DIPTYCH);
+        }
         setupEngines();
         registerReceiver(sonyCameraReceiver, new IntentFilter("com.sony.scalar.database.avindex.action.AVINDEX_DATABASE_UPDATED"));
         registerBatteryReceiver();
@@ -747,8 +752,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     }
 
     public void handleStitchedDiptych(String tempPath, ProcessingQueueManager.Entry entry, long scannerStartedMs, long detectedMs, long stableMs, int scannerAttempts) {
+        boolean isDiptychOutput = diptychManager == null || !diptychManager.isDoubleExposureMode();
         entry.originalPath = tempPath;
-        entry.isDiptych = true;
+        entry.isDiptych = isDiptychOutput;
 
         if (shouldQueuePhotos()) {
             if (processingQueueManager != null) {
@@ -759,7 +765,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             maybeAutoProcessQueuedPhotos();
         } else {
             File outDir = Filepaths.getGradedDir();
-            mProcessor.processJpeg(tempPath, outDir.getAbsolutePath(), entry.qualityIndex, entry.jpegQuality, entry.profile, false, true,
+            mProcessor.processJpeg(tempPath, outDir.getAbsolutePath(), entry.qualityIndex, entry.jpegQuality, entry.profile, false, isDiptychOutput,
                     entry.lutPath, entry.lutName,
                     scannerStartedMs, detectedMs, stableMs, scannerAttempts);
         }
@@ -854,7 +860,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 
         if (displayState == 0 && !menuController.isOpen()) setLiveUiSuppressed(true);
         // Diptych mode: shift AF bracket to the active (open) side before focusing
-        if (afOverlay != null && diptychManager != null && diptychManager.isEnabled()) {
+        if (afOverlay != null && diptychManager != null && diptychManager.isEnabled()
+                && !diptychManager.isDoubleExposureMode()) {
             boolean isFirst = diptychManager.getState() == DiptychManager.STATE_NEED_FIRST;
             boolean isSecond = diptychManager.getState() == DiptychManager.STATE_NEED_SECOND;
             int centerX = 0;
@@ -1195,7 +1202,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             return true;
         }
 
-        if (diptychManager != null && diptychManager.isEnabled() && diptychManager.getState() == DiptychManager.STATE_NEED_SECOND) {
+        if (diptychManager != null && diptychManager.isEnabled() && !diptychManager.isDoubleExposureMode()
+                && diptychManager.getState() == DiptychManager.STATE_NEED_SECOND) {
             diptychManager.setThumbOnLeft(true);
             updateDiptychPreviewWindow();
             return true;
@@ -1231,7 +1239,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             return true;
         }
 
-        if (diptychManager != null && diptychManager.isEnabled() && diptychManager.getState() == DiptychManager.STATE_NEED_SECOND) {
+        if (diptychManager != null && diptychManager.isEnabled() && !diptychManager.isDoubleExposureMode()
+                && diptychManager.getState() == DiptychManager.STATE_NEED_SECOND) {
             diptychManager.setThumbOnLeft(false);
             updateDiptychPreviewWindow();
             return true;
@@ -1285,6 +1294,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         ed.putInt("jpegQuality",       prefJpegQuality);
         ed.putInt("processingFrequency", processingFrequency);
         ed.putBoolean("diptychEnabled", isPrefDiptych());
+        ed.putBoolean("doubleExposureEnabled", isPrefDoubleExposure());
         ed.apply();
     }
 
@@ -1322,11 +1332,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             int mode = 0;
             if (isPrefCinemaMattes()) mode = 1;
             else if (isPrefDiptych()) mode = 2;
+            else if (isPrefDoubleExposure()) mode = 3;
 
-            mode = (mode + 1) % 3;
+            mode = (mode + 1) % 4;
 
             setPrefCinemaMattes(mode == 1);
             setPrefDiptych(mode == 2);
+            setPrefDoubleExposure(mode == 3);
             saveAppPreferences();
             updateMainHUD();
             return true;
@@ -2127,11 +2139,15 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         // --- 3. UPDATE TEXT FIELDS ---
         if (!isProcessing && tvTopStatus != null) {
             if (diptychManager != null && diptychManager.isEnabled() && diptychManager.getState() == DiptychManager.STATE_NEED_SECOND) {
-                tvTopStatus.setText("SHOT 1 SAVED. [L/R] TO SWAP SIDE.");
+                tvTopStatus.setText(diptychManager.isDoubleExposureMode()
+                        ? "SHOT 1 SAVED. TAKE SECOND EXPOSURE."
+                        : "SHOT 1 SAVED. [L/R] TO SWAP SIDE.");
                 UiTheme.softPanel(tvTopStatus);
                 tvTopStatus.setTextColor(UiTheme.SUCCESS);
             } else if (diptychManager != null && diptychManager.isEnabled() && diptychManager.getState() == DiptychManager.STATE_STITCHING) {
-                tvTopStatus.setText("STITCHING DIPTYCH...");
+                tvTopStatus.setText(diptychManager.isDoubleExposureMode()
+                        ? "BLENDING DOUBLE EXP..."
+                        : "STITCHING DIPTYCH...");
                 UiTheme.softPanel(tvTopStatus);
                 tvTopStatus.setTextColor(UiTheme.WARN);
             } else {
@@ -2438,7 +2454,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     @Override public boolean isPrefCinemaMattes() { return prefShowCinemaMattes; }
     @Override public boolean isPrefGridLines()    { return prefShowGridLines; }
     @Override public int     getPrefJpegQuality() { return prefJpegQuality; }
-    @Override public boolean isPrefDiptych()      { return diptychManager != null && diptychManager.isEnabled(); } // <--- ADDED
+    @Override public boolean isPrefDiptych()      { return diptychManager != null && diptychManager.isEnabled() && diptychManager.getMode() == DiptychManager.MODE_DIPTYCH; } // <--- ADDED
+    @Override public boolean isPrefDoubleExposure() { return diptychManager != null && diptychManager.isEnabled() && diptychManager.getMode() == DiptychManager.MODE_DOUBLE_EXPOSURE; }
     @Override public int     getProcessingFrequency() { return processingFrequency; }
     @Override public int     getQueuedPhotoCount() { return processingQueueManager != null ? processingQueueManager.getCountForMode(currentQueueMode()) : 0; }
     @Override public List<ProcessingQueueManager.Entry> getQueuedPhotoEntries() {
@@ -2473,9 +2490,37 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     @Override public void    setPrefDiptych(boolean v)      {
         if (diptychManager != null) {
             try {
-                diptychManager.setEnabled(v);
+                if (v) {
+                    diptychManager.setEnabled(true, DiptychManager.MODE_DIPTYCH);
+                } else if (isPrefDiptych()) {
+                    diptychManager.setEnabled(false, DiptychManager.MODE_DIPTYCH);
+                }
             } catch (Throwable t) {
                 Log.e("JPEG.CAM", "Failed to toggle diptych mode", t);
+                try {
+                    diptychManager.setVisibility(false);
+                } catch (Throwable ignored) {}
+            }
+            if (!v && (menuController == null || !menuController.isOpen())) {
+                resetDiptychFocusAreas();
+            }
+        }
+        if (menuController != null && menuController.isOpen()) {
+            updateDiptychPreviewWindow();
+        } else {
+            updateMainHUD();
+        }
+    }
+    @Override public void    setPrefDoubleExposure(boolean v) {
+        if (diptychManager != null) {
+            try {
+                if (v) {
+                    diptychManager.setEnabled(true, DiptychManager.MODE_DOUBLE_EXPOSURE);
+                } else if (isPrefDoubleExposure()) {
+                    diptychManager.setEnabled(false, DiptychManager.MODE_DOUBLE_EXPOSURE);
+                }
+            } catch (Throwable t) {
+                Log.e("JPEG.CAM", "Failed to toggle double exposure mode", t);
                 try {
                     diptychManager.setVisibility(false);
                 } catch (Throwable ignored) {}

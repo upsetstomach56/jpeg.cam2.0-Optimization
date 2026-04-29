@@ -1,4 +1,5 @@
 #include <jni.h>
+#include <algorithm>
 #include <vector>
 #include <string>
 #include <stdio.h>
@@ -654,6 +655,126 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_Diptych
     jpeg_destroy_decompress(&c2);
     
     LOGD("Diptych saved: %s", po);
+    fclose(f1); fclose(f2); fclose(fo);
+    env->ReleaseStringUTFChars(path1, p1); env->ReleaseStringUTFChars(path2, p2); env->ReleaseStringUTFChars(outPath, po);
+    return JNI_TRUE;
+}
+
+// --- FULL RESOLUTION DOUBLE EXPOSURE BLEND ENGINE ---
+extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_DiptychManager_blendDoubleExposureNative(
+    JNIEnv* env, jobject obj, jstring path1, jstring path2, jstring outPath, jint quality) {
+
+    const char *p1 = env->GetStringUTFChars(path1, NULL);
+    const char *p2 = env->GetStringUTFChars(path2, NULL);
+    const char *po = env->GetStringUTFChars(outPath, NULL);
+    FILE *f1 = fopen_retry(p1, "rb");
+    if (!f1) {
+        LOGD("Double exposure open failed (p1): %s, error: %s", p1, strerror(errno));
+        env->ReleaseStringUTFChars(path1, p1); env->ReleaseStringUTFChars(path2, p2); env->ReleaseStringUTFChars(outPath, po);
+        return JNI_FALSE;
+    }
+
+    FILE *f2 = fopen_retry(p2, "rb");
+    if (!f2) {
+        LOGD("Double exposure open failed (p2): %s, error: %s", p2, strerror(errno));
+        fclose(f1);
+        env->ReleaseStringUTFChars(path1, p1); env->ReleaseStringUTFChars(path2, p2); env->ReleaseStringUTFChars(outPath, po);
+        return JNI_FALSE;
+    }
+
+    FILE *fo = fopen_retry(po, "wb");
+    if (!fo) {
+        LOGD("Double exposure open failed (out): %s, error: %s", po, strerror(errno));
+        fclose(f1); fclose(f2);
+        env->ReleaseStringUTFChars(path1, p1); env->ReleaseStringUTFChars(path2, p2); env->ReleaseStringUTFChars(outPath, po);
+        return JNI_FALSE;
+    }
+
+    struct jpeg_decompress_struct c1, c2;
+    struct my_error_mgr j1, j2;
+    memset(&c1, 0, sizeof(c1));
+    memset(&c2, 0, sizeof(c2));
+
+    c1.err = jpeg_std_error(&j1.pub); j1.pub.error_exit = my_error_exit;
+    c2.err = jpeg_std_error(&j2.pub); j2.pub.error_exit = my_error_exit;
+    if (setjmp(j1.setjmp_buffer) || setjmp(j2.setjmp_buffer)) {
+        LOGD("Double exposure jpeg decode setup failed");
+        if (c1.mem) jpeg_destroy_decompress(&c1);
+        if (c2.mem) jpeg_destroy_decompress(&c2);
+        fclose(f1); fclose(f2); fclose(fo);
+        env->ReleaseStringUTFChars(path1, p1); env->ReleaseStringUTFChars(path2, p2); env->ReleaseStringUTFChars(outPath, po);
+        return JNI_FALSE;
+    }
+
+    jpeg_create_decompress(&c1); jpeg_stdio_src(&c1, f1); jpeg_read_header(&c1, TRUE);
+    jpeg_create_decompress(&c2); jpeg_stdio_src(&c2, f2); jpeg_read_header(&c2, TRUE);
+
+    c1.scale_denom = (c1.image_width > 3000) ? 2 : 1;
+    c2.scale_denom = (c2.image_width > 3000) ? 2 : 1;
+
+    c1.dct_method = JDCT_IFAST; c1.do_fancy_upsampling = FALSE;
+    c2.dct_method = JDCT_IFAST; c2.do_fancy_upsampling = FALSE;
+
+    c1.out_color_space = JCS_RGB; jpeg_start_decompress(&c1);
+    c2.out_color_space = JCS_RGB; jpeg_start_decompress(&c2);
+
+    struct jpeg_compress_struct co;
+    struct my_error_mgr jo;
+    memset(&co, 0, sizeof(co));
+
+    co.err = jpeg_std_error(&jo.pub); jo.pub.error_exit = my_error_exit;
+    if (setjmp(jo.setjmp_buffer)) {
+        LOGD("Double exposure jpeg encode setup failed");
+        if (co.mem) jpeg_destroy_compress(&co);
+        if (c1.mem) jpeg_destroy_decompress(&c1);
+        if (c2.mem) jpeg_destroy_decompress(&c2);
+        fclose(f1); fclose(f2); fclose(fo);
+        env->ReleaseStringUTFChars(path1, p1); env->ReleaseStringUTFChars(path2, p2); env->ReleaseStringUTFChars(outPath, po);
+        return JNI_FALSE;
+    }
+    jpeg_create_compress(&co); jpeg_stdio_dest(&co, fo);
+
+    int w1 = c1.output_width, h1 = c1.output_height;
+    int w2 = c2.output_width, h2 = c2.output_height;
+    int finalW = std::min(w1, w2);
+    int finalH = std::min(h1, h2);
+
+    co.image_width = finalW; co.image_height = finalH; co.input_components = 3; co.in_color_space = JCS_RGB;
+    jpeg_set_defaults(&co); jpeg_set_quality(&co, quality, TRUE); jpeg_start_compress(&co, TRUE);
+
+    unsigned char *row1 = (unsigned char*)malloc(w1 * 3);
+    unsigned char *row2 = (unsigned char*)malloc(w2 * 3);
+    unsigned char *combined = (unsigned char*)malloc(finalW * 3);
+    if (!row1 || !row2 || !combined) {
+        LOGD("Double exposure malloc failed");
+        if (row1) free(row1);
+        if (row2) free(row2);
+        if (combined) free(combined);
+        if (co.mem) jpeg_destroy_compress(&co);
+        if (c1.mem) jpeg_destroy_decompress(&c1);
+        if (c2.mem) jpeg_destroy_decompress(&c2);
+        fclose(f1); fclose(f2); fclose(fo);
+        env->ReleaseStringUTFChars(path1, p1); env->ReleaseStringUTFChars(path2, p2); env->ReleaseStringUTFChars(outPath, po);
+        return JNI_FALSE;
+    }
+
+    JSAMPROW rp1[1], rp2[1], rpo[1]; rp1[0] = row1; rp2[0] = row2; rpo[0] = combined;
+
+    for (int y = 0; y < finalH; y++) {
+        jpeg_read_scanlines(&c1, rp1, 1);
+        jpeg_read_scanlines(&c2, rp2, 1);
+        for (int x = 0; x < finalW * 3; x++) {
+            combined[x] = (unsigned char)(((int)row1[x] + (int)row2[x]) >> 1);
+        }
+        jpeg_write_scanlines(&co, rpo, 1);
+    }
+
+    free(row1); free(row2); free(combined);
+    jpeg_finish_compress(&co); jpeg_destroy_compress(&co);
+    jpeg_destroy_decompress(&c1);
+    jpeg_destroy_decompress(&c2);
+
+    LOGD("Double exposure saved: %s", po);
     fclose(f1); fclose(f2); fclose(fo);
     env->ReleaseStringUTFChars(path1, p1); env->ReleaseStringUTFChars(path2, p2); env->ReleaseStringUTFChars(outPath, po);
     return JNI_TRUE;
