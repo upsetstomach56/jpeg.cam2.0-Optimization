@@ -880,22 +880,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 afOverlay.setDiptychCenterX(-1);
             }
 
-            if (cameraManager != null && cameraManager.getCamera() != null) {
-                try {
-                    android.hardware.Camera.Parameters p = cameraManager.getCamera().getParameters();
-                    if (p.getMaxNumFocusAreas() > 0) {
-                        if (isFirst || isSecond) {
-                            java.util.List<android.hardware.Camera.Area> areas = new java.util.ArrayList<android.hardware.Camera.Area>();
-                            int rectSize = 150;
-                            areas.add(new android.hardware.Camera.Area(new android.graphics.Rect(centerX - rectSize, -rectSize, centerX + rectSize, rectSize), 1000));
-                            p.setFocusAreas(areas);
-                        } else {
-                            p.setFocusAreas(null);
-                        }
-                        cameraManager.getCamera().setParameters(p);
-                    }
-                } catch (Exception ignored) {}
-            }
+            // Keep this visual-only. Writing focus areas during Sony's native shutter
+            // half-press path can destabilize the camera process on some bodies.
         } else {
             if (afOverlay != null) afOverlay.setDiptychCenterX(-1);
         }

@@ -126,7 +126,9 @@ public class DiptychOverlayView extends View {
                 Rect dstRect = doubleExposureMode
                         ? new Rect(0, 0, w, h)
                         : (thumbOnLeft ? new Rect(0, 0, mid, h) : new Rect(mid, 0, w, h));
+                thumbPaint.setAlpha(doubleExposureMode ? 128 : 255);
                 canvas.drawBitmap(thumbnail, srcRect, dstRect, thumbPaint);
+                thumbPaint.setAlpha(255);
             }
 
             if (state == DiptychManager.STATE_STITCHING) {
