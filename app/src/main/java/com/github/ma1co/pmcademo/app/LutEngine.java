@@ -173,8 +173,12 @@ public class LutEngine {
 
             // ---- Phase 2: write temp files and load native (no open ZIP handles) ----
             if (lutBytes != null) {
-                String ext = lutEntry.contains(".") ? lutEntry.substring(lutEntry.lastIndexOf('.')) : ".cube";
-                tempLutFile = new File(cacheDir, "cam_lut_tmp" + ext);
+                // Use strict 8.3 filenames — Sony camera FAT32 driver can read LFN files
+                // created on a PC but cannot CREATE new LFN entries from the device.
+                // cam_lut_tmp.cube (11-char name, 4-char ext) requires LFN → ENOENT.
+                // LUT_TMP.CUB and LUT_TMP.PNG are both valid 8.3.
+                boolean isPng = lutEntry != null && lutEntry.toLowerCase().endsWith(".png");
+                tempLutFile = new File(cacheDir, isPng ? "LUT_TMP.PNG" : "LUT_TMP.CUB");
                 DebugLog.write("CAM: writing lut to " + tempLutFile.getAbsolutePath());
                 writeBytesToFile(lutBytes, tempLutFile);
                 lutBytes = null; // release before native load
@@ -184,7 +188,7 @@ public class LutEngine {
             }
 
             if (grainBytes != null) {
-                tempGrainFile = new File(cacheDir, "cam_grain_tmp.png");
+                tempGrainFile = new File(cacheDir, "GRN_TMP.PNG"); // 8.3 compliant
                 DebugLog.write("CAM: writing grain to " + tempGrainFile.getAbsolutePath());
                 writeBytesToFile(grainBytes, tempGrainFile);
                 grainBytes = null; // release before native load
