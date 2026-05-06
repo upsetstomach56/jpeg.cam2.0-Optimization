@@ -92,12 +92,14 @@ public class LutEngine {
     /**
      * Opens a .cam bundle (renamed ZIP) and loads its LUT and grain into native memory.
      *
-     * Two-phase approach to avoid SD card conflicts:
-     *   Phase 1 — open ZipFile, read all asset bytes into memory, CLOSE ZipFile.
-     *   Phase 2 — write temp files and call native loaders (no open file handles).
+     * Streaming approach: ZipFile stays open while we pipe each asset through an 8 KB
+     * rolling buffer directly to a temp file. Peak heap cost is just the 8 KB buffer —
+     * no byte array accumulation, no OOM risk on the 24 MB Dalvik heap.
      *
-     * Reading into a pre-sized byte[] (no ByteArrayOutputStream double-copy):
-     *   lut.cube ~970 KB + grain.png ~300 KB ≈ 1.3 MB peak — safe on the 24 MB heap.
+     * Temp files use strict 8.3 filenames (LUT_TMP.CUB / LUT_TMP.PNG / GRN_TMP.PNG).
+     * The Sony camera FAT32 driver can read LFN files created on a PC but cannot CREATE
+     * new LFN entries from the device — an open ZipFile handle is NOT the cause of ENOENT,
+     * the long filename was. 8.3 names are safe to create with ZipFile still open.
      *
      * Cached by camPath + file size so the ZIP is only opened once per recipe switch.
      */
@@ -118,18 +120,15 @@ public class LutEngine {
             return result;
         }
 
-        String lutEntry   = null;
-        String grainEntry = null;
-        byte[] lutBytes   = null;
-        byte[] grainBytes = null;
         File tempLutFile   = null;
         File tempGrainFile = null;
 
         try {
-            // ---- Phase 1: read everything into memory, then close the ZipFile ----
             java.util.zip.ZipFile zf = new java.util.zip.ZipFile(camFile);
             try {
-                // 1a. Read recipe.json to discover entry names.
+                // 1. Read recipe.json to discover asset entry names (small — ByteArrayOutputStream fine).
+                String lutEntry   = null;
+                String grainEntry = null;
                 java.util.zip.ZipEntry je = zf.getEntry("recipe.json");
                 if (je != null) {
                     byte[] jsonBytes = readZipEntry(zf, je);
@@ -144,64 +143,48 @@ public class LutEngine {
                     DebugLog.write("CAM: no recipe.json in bundle");
                 }
 
-                // 1b. Read LUT bytes into memory.
+                // 2. Stream LUT directly to 8.3 temp file (no byte array in heap).
                 if (lutEntry == null) {
                     DebugLog.write("CAM: no lutEntry in recipe.json");
                 } else {
                     java.util.zip.ZipEntry le = zf.getEntry(lutEntry);
                     if (le != null) {
-                        DebugLog.write("CAM: reading lut \"" + lutEntry + "\" (" + le.getSize() + "b)");
-                        lutBytes = readZipEntryExact(zf, le);
+                        boolean isPng = lutEntry.toLowerCase().endsWith(".png");
+                        tempLutFile = new File(cacheDir, isPng ? "LUT_TMP.PNG" : "LUT_TMP.CUB");
+                        DebugLog.write("CAM: streaming lut \"" + lutEntry + "\" (" + le.getSize() + "b) -> " + tempLutFile.getName());
+                        streamZipEntryToFile(zf, le, tempLutFile);
+                        result.lutLoaded = loadLutNative(tempLutFile.getAbsolutePath());
+                        DebugLog.write("CAM: loadLutNative=" + result.lutLoaded);
+                        currentLutName = "";
                     } else {
                         DebugLog.write("CAM: lutEntry \"" + lutEntry + "\" not found in ZIP");
                     }
                 }
 
-                // 1c. Read grain bytes into memory (optional).
+                // 3. Stream grain directly to 8.3 temp file (optional).
                 if (grainEntry != null) {
                     java.util.zip.ZipEntry ge = zf.getEntry(grainEntry);
                     if (ge != null) {
-                        DebugLog.write("CAM: reading grain \"" + grainEntry + "\" (" + ge.getSize() + "b)");
-                        grainBytes = readZipEntryExact(zf, ge);
+                        tempGrainFile = new File(cacheDir, "GRN_TMP.PNG");
+                        DebugLog.write("CAM: streaming grain \"" + grainEntry + "\" (" + ge.getSize() + "b) -> " + tempGrainFile.getName());
+                        streamZipEntryToFile(zf, ge, tempGrainFile);
+                        result.grainLoaded = loadGrainTextureNative(tempGrainFile.getAbsolutePath());
+                        DebugLog.write("CAM: loadGrainTextureNative=" + result.grainLoaded);
+                        currentGrainTexturePath = "";
                     } else {
                         DebugLog.write("CAM: grainEntry \"" + grainEntry + "\" not found in ZIP");
                     }
                 }
+
             } finally {
-                zf.close(); // ZIP closed before any SD card writes
-            }
-
-            // ---- Phase 2: write temp files and load native (no open ZIP handles) ----
-            if (lutBytes != null) {
-                // Use strict 8.3 filenames — Sony camera FAT32 driver can read LFN files
-                // created on a PC but cannot CREATE new LFN entries from the device.
-                // cam_lut_tmp.cube (11-char name, 4-char ext) requires LFN → ENOENT.
-                // LUT_TMP.CUB and LUT_TMP.PNG are both valid 8.3.
-                boolean isPng = lutEntry != null && lutEntry.toLowerCase().endsWith(".png");
-                tempLutFile = new File(cacheDir, isPng ? "LUT_TMP.PNG" : "LUT_TMP.CUB");
-                DebugLog.write("CAM: writing lut to " + tempLutFile.getAbsolutePath());
-                writeBytesToFile(lutBytes, tempLutFile);
-                lutBytes = null; // release before native load
-                result.lutLoaded = loadLutNative(tempLutFile.getAbsolutePath());
-                DebugLog.write("CAM: loadLutNative=" + result.lutLoaded);
-                currentLutName = "";
-            }
-
-            if (grainBytes != null) {
-                tempGrainFile = new File(cacheDir, "GRN_TMP.PNG"); // 8.3 compliant
-                DebugLog.write("CAM: writing grain to " + tempGrainFile.getAbsolutePath());
-                writeBytesToFile(grainBytes, tempGrainFile);
-                grainBytes = null; // release before native load
-                result.grainLoaded = loadGrainTextureNative(tempGrainFile.getAbsolutePath());
-                DebugLog.write("CAM: loadGrainTextureNative=" + result.grainLoaded);
-                currentGrainTexturePath = "";
+                zf.close();
             }
 
         } catch (Exception e) {
             DebugLog.write("CAM: load exception: " + e.getClass().getSimpleName() + ": " + e.getMessage());
             return result;
         } finally {
-            if (tempLutFile  != null) tempLutFile.delete();
+            if (tempLutFile   != null) tempLutFile.delete();
             if (tempGrainFile != null) tempGrainFile.delete();
         }
 
@@ -225,43 +208,23 @@ public class LutEngine {
     }
 
     /**
-     * Reads a ZipEntry into a pre-sized byte array using the entry's declared size.
-     * No ByteArrayOutputStream means no double-copy — safe for assets up to a few MB.
-     * Falls back to ByteArrayOutputStream if the declared size is unavailable.
+     * Streams a ZipEntry to a file using an 8 KB rolling buffer.
+     * Peak heap cost: 8 KB — no full-file byte array ever allocated.
      */
-    private static byte[] readZipEntryExact(java.util.zip.ZipFile zf, java.util.zip.ZipEntry entry)
-            throws java.io.IOException {
+    private static void streamZipEntryToFile(java.util.zip.ZipFile zf,
+                                              java.util.zip.ZipEntry entry,
+                                              File dest) throws java.io.IOException {
         java.io.InputStream is = zf.getInputStream(entry);
-        try {
-            long declared = entry.getSize();
-            if (declared > 0 && declared <= 4 * 1024 * 1024) {
-                byte[] data = new byte[(int) declared];
-                int offset = 0;
-                while (offset < data.length) {
-                    int n = is.read(data, offset, data.length - offset);
-                    if (n == -1) break;
-                    offset += n;
-                }
-                return data;
-            } else {
-                // Size unknown — fall back to growing buffer (should not normally happen)
-                java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-                byte[] buf = new byte[8192]; int n;
-                while ((n = is.read(buf)) != -1) baos.write(buf, 0, n);
-                return baos.toByteArray();
-            }
-        } finally {
-            is.close();
-        }
-    }
-
-    /** Writes a byte array to a file. */
-    private static void writeBytesToFile(byte[] data, File dest) throws java.io.IOException {
         java.io.FileOutputStream fos = new java.io.FileOutputStream(dest);
         try {
-            fos.write(data);
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = is.read(buf)) != -1) {
+                fos.write(buf, 0, n);
+            }
         } finally {
             fos.close();
+            is.close();
         }
     }
 }
