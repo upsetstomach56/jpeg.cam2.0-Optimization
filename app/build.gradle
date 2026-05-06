@@ -57,13 +57,15 @@ android {
 }
 
 repositories {
-    maven { url "https://jitpack.io" }
     mavenCentral()
     google()
 }
 
 dependencies {
-    compileOnly 'com.github.ma1co.OpenMemories-Framework:stubs:f8df3504d8'
+    // OpenMemories stubs vendored locally — no JitPack dependency at build time.
+    // Source: https://jitpack.io/com/github/ma1co/OpenMemories-Framework/stubs/master-SNAPSHOT/
+    // This is compile-only (never included in the APK) and the framework never changes.
+    compileOnly files('libs/stubs-master-SNAPSHOT.jar')
 
     // ALPHAOS DASHBOARD HTTP SERVER
     implementation 'org.nanohttpd:nanohttpd:2.3.1'

@@ -46,7 +46,17 @@ jobs:
         wget -q https://services.gradle.org/distributions/gradle-4.10.3-bin.zip
         unzip -q gradle-4.10.3-bin.zip
 
-        ./gradle-4.10.3/bin/gradle assembleRelease --stacktrace
+        for attempt in 1 2 3; do
+          echo "Build attempt $attempt..."
+          ./gradle-4.10.3/bin/gradle assembleRelease --stacktrace && break
+          if [ $attempt -lt 3 ]; then
+            echo "Build failed, retrying in 15 seconds..."
+            sleep 15
+          else
+            echo "All attempts failed."
+            exit 1
+          fi
+        done
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
