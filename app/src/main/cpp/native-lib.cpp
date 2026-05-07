@@ -37,7 +37,7 @@ METHODDEF(void) my_error_exit (j_common_ptr cinfo) {
     longjmp(myerr->setjmp_buffer, 1);
 }
 
-enum KernelKind { KERNEL_YUV_FAST, KERNEL_RGB, KERNEL_YUV };
+enum KernelKind { KERNEL_YUV_FAST, KERNEL_RGB, KERNEL_YUV, KERNEL_GRAIN_ONLY_RGB, KERNEL_GRAIN_ONLY_YUV };
 
 struct RowKernelTask {
     KernelKind kind;
@@ -107,6 +107,22 @@ static void dispatch_row_kernel(RowKernelTask* task) {
             uint8_t* row_ptr = task->base + row * task->rowStride;
             uint32_t seed = task->baseSeed + (uint32_t)(ay * 987654321u); // stable seed per row
             process_row_yuv(row_ptr, task->width, ay, task->cx, task->cy_center, task->vig_coef, task->shadowToe, task->rollOff, task->colorChrome, task->chromeBlue, task->subtractiveSat, task->halation, task->vignette, task->grain, task->grainSize, task->scaleDenom, task->advancedGrainExperimental, seed, task->rollLut, task->externalTex, task->is1024Grain, task->grainTransform, task->is_mono);
+        }
+    } else if (task->kind == KERNEL_GRAIN_ONLY_RGB) {
+        for (int row = task->rowStart; row < task->rowEnd; row++) {
+            int ay = task->startY + row;
+            if (task->applyCrop && (ay < task->sk || ay >= task->sk + task->fh)) continue;
+            uint8_t* row_ptr = task->base + row * task->rowStride;
+            uint32_t seed = task->baseSeed + (uint32_t)(ay * 987654321u);
+            process_grain_only_rgb(row_ptr, task->width, ay, task->grain, task->grainSize, task->scaleDenom, task->advancedGrainExperimental, seed, task->externalTex, task->is1024Grain, task->grainTransform);
+        }
+    } else if (task->kind == KERNEL_GRAIN_ONLY_YUV) {
+        for (int row = task->rowStart; row < task->rowEnd; row++) {
+            int ay = task->startY + row;
+            if (task->applyCrop && (ay < task->sk || ay >= task->sk + task->fh)) continue;
+            uint8_t* row_ptr = task->base + row * task->rowStride;
+            uint32_t seed = task->baseSeed + (uint32_t)(ay * 987654321u);
+            process_grain_only_yuv(row_ptr, task->width, ay, task->grain, task->grainSize, task->scaleDenom, task->advancedGrainExperimental, seed, task->externalTex, task->is1024Grain, task->grainTransform);
         }
     }
 }
@@ -278,8 +294,8 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
     FILE *inf = fopen(ifn, "rb"), *ouf = fopen(ofn, "wb");
     if(!inf||!ouf){ if(inf)fclose(inf); if(ouf)fclose(ouf); env->ReleaseStringUTFChars(inPath,ifn); env->ReleaseStringUTFChars(outPath,ofn); return JNI_FALSE; }
 
-    static char in_buf[65536];
-    static char out_buf[65536];
+    static char in_buf[262144];  // 256KB — reduces per-MCU SD card stalls
+    static char out_buf[262144];
     setvbuf(inf, in_buf, _IOFBF, sizeof(in_buf));
     setvbuf(ouf, out_buf, _IOFBF, sizeof(out_buf));
 
@@ -408,7 +424,11 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
     long long t_kernel = 0;
     long long t_encode = 0;
 
-    bool row_stream_mode = (bloom <= 0 && halation <= 0 && advancedGrainExperimental != 1);
+    // Row-stream is the fast path: decode → kernel → encode, one chunk at a time.
+    // Bloom path is only needed when bloom/halation are active (cross-row sliding window).
+    // Note: Engine 1 (crystal grain, advancedGrainExperimental==1) is legacy dead code —
+    // Engine 2 (PNG texture) is always selected when grain is active.
+    bool row_stream_mode = (bloom <= 0 && halation <= 0);
     if (row_stream_mode) {
         while (cd.output_scanline < cd.output_height) {
             int ay = cd.output_scanline;
@@ -509,72 +529,123 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
             t_encode += (get_time_ms() - t_e_start);
         }
     } else {
+        // =====================================================================
+        // BLOOM PATH — Film-correct order:
+        // 1. Kernel (LUT + tone + color + vignette) on r[] copy — NO post-grain
+        // 2. Bloom/Halation spatial effect — single-threaded (cross-row deps)
+        // 3. Grain on orw[] — LAST (silver halide crystals develop on surface)
+        // =====================================================================
+
+        // Allocate a processed copy of the window so we don't corrupt r[] lookback rows
+        unsigned char* pb = (unsigned char*)memalign(16, BUF * rs);
+        unsigned char* pr_rows[256];
+        if (pb) {
+            for (int i = 0; i < BUF; i++) pr_rows[i] = pb + (i * rs);
+        }
+
         long long t_d_start = get_time_ms();
         if(cd.output_height>0){ rpx[0]=r[10]; jpeg_read_scanlines(&cd,rpx,1); for(int i=0; i<10; i++) memcpy(r[i],r[10],rs); }
         for(int i=11; i<BUF; i++){ if(cd.output_scanline < cd.output_height){ rpx[0]=r[i]; jpeg_read_scanlines(&cd,rpx,1); } else memcpy(r[i],r[i-1],rs); }
         t_decode += (get_time_ms() - t_d_start);
 
+        // Determine if we need post-bloom grain (Engine 0 or 2 only; Engine 1 is pre-LUT)
+        bool needs_post_grain = (grain > 0 && advancedGrainExperimental != 1);
+
         int pr = 0; while(pr < (int)cd.output_height){
             long long t_k_start = get_time_ms();
             int rtp = std::min(CHK, (int)cd.output_height-pr);
-            
-            // Multithread the entire windowed chunk
-            int active_workers = worker_count;
-            if (active_workers > rtp) active_workers = rtp;
-            if (rtp < worker_count * 16) active_workers = 1;
+            int window_rows = rtp + 20;  // all rows the bloom window touches
+            if (window_rows > BUF) window_rows = BUF;
 
-            RowKernelTask tasks[4];
-            for (int t = 0; t < active_workers; t++) {
-                int start = (rtp * t) / active_workers;
-                int end = (rtp * (t + 1)) / active_workers;
-                
-                tasks[t].base = ob;
-                tasks[t].rowStride = rs;
-                tasks[t].width = cd.output_width;
-                tasks[t].startY = pr;
-                tasks[t].rowStart = start;
-                tasks[t].rowEnd = end;
-                tasks[t].applyCrop = applyCrop;
-                tasks[t].sk = sk;
-                tasks[t].fh = fh;
+            // --- STAGE 1: Kernel (no grain) on a COPY of the window rows ---
+            // Copy r[] window to pr_rows[] so bloom reads kernel-processed data
+            // without corrupting the ring buffer for the next chunk.
+            if (pb) {
+                int copy_bytes = cd.output_width * 3;
+                for (int i = 0; i < window_rows; i++) memcpy(pr_rows[i], r[i], copy_bytes);
 
-                tasks[t].scaleDenom = scaleDenom;
-                tasks[t].grain = grain;
-                tasks[t].externalTex = externalTex;
-                tasks[t].is1024Grain = is_1024_grain;
-                tasks[t].grainTransform = grainTransform;
-                tasks[t].baseSeed = grain_seed;
-                tasks[t].is_mono = (bool)isMono;
+                // Multithread the kernel on pr_rows[] (all window rows)
+                int kernel_rows = window_rows;
+                int active_workers = worker_count;
+                if (active_workers > kernel_rows) active_workers = kernel_rows;
+                if (kernel_rows < worker_count * 16) active_workers = 1;
 
-                if (use_rgb) {
-                    tasks[t].kind = KERNEL_RGB;
-                    tasks[t].cx = cx; tasks[t].cy_center = cy_center; tasks[t].vig_coef = vig_coef;
-                    tasks[t].shadowToe = shadowToe; tasks[t].rollOff = rollOff;
-                    tasks[t].colorChrome = colorChrome; tasks[t].chromeBlue = chromeBlue;
-                    tasks[t].subtractiveSat = subtractiveSat; tasks[t].halation = 0; // Bloom handles halation here
-                    tasks[t].vignette = vignette; tasks[t].grainSize = grainSize;
-                    tasks[t].advancedGrainExperimental = advancedGrainExperimental;
-                    tasks[t].opac_mapped = opac_m; tasks[t].map = map;
-                    tasks[t].nativeLut = localLut.data(); tasks[t].nativeLutSize = localLutSize;
-                    tasks[t].lutMax = localLutSize - 1; tasks[t].lutSize2 = localLutSize * localLutSize;
-                } else {
-                    tasks[t].kind = KERNEL_YUV;
-                    tasks[t].cx = cx; tasks[t].cy_center = cy_center; tasks[t].vig_coef = vig_coef;
-                    tasks[t].shadowToe = shadowToe; tasks[t].rollOff = rollOff;
-                    tasks[t].colorChrome = colorChrome; tasks[t].chromeBlue = chromeBlue;
-                    tasks[t].subtractiveSat = subtractiveSat; tasks[t].halation = 0; // Bloom handles halation here
-                    tasks[t].vignette = vignette; tasks[t].grainSize = grainSize;
-                    tasks[t].advancedGrainExperimental = advancedGrainExperimental;
-                    tasks[t].rollLut = roll;
+                RowKernelTask tasks[4];
+                for (int t = 0; t < active_workers; t++) {
+                    int start = (kernel_rows * t) / active_workers;
+                    int end = (kernel_rows * (t + 1)) / active_workers;
+
+                    tasks[t].base = pb;
+                    tasks[t].rowStride = rs;
+                    tasks[t].width = cd.output_width;
+                    tasks[t].startY = (pr > 10) ? (pr - 10) : 0;  // clamp: padding rows get ay=0
+                    tasks[t].rowStart = start;
+                    tasks[t].rowEnd = end;
+                    tasks[t].applyCrop = false;  // process all window rows
+                    tasks[t].sk = sk;
+                    tasks[t].fh = fh;
+
+                    tasks[t].scaleDenom = scaleDenom;
+                    // Engine 1 (crystal) is pre-LUT and must run here.
+                    // Engines 0/2 (post-LUT grain) are deferred to Stage 3.
+                    tasks[t].grain = (advancedGrainExperimental == 1) ? grain : 0;
+                    tasks[t].externalTex = externalTex;
+                    tasks[t].is1024Grain = is_1024_grain;
+                    tasks[t].grainTransform = grainTransform;
+                    tasks[t].baseSeed = grain_seed;
+                    tasks[t].is_mono = (bool)isMono;
+
+                    if (use_rgb) {
+                        tasks[t].kind = KERNEL_RGB;
+                        tasks[t].cx = cx; tasks[t].cy_center = cy_center; tasks[t].vig_coef = vig_coef;
+                        tasks[t].shadowToe = shadowToe; tasks[t].rollOff = rollOff;
+                        tasks[t].colorChrome = colorChrome; tasks[t].chromeBlue = chromeBlue;
+                        tasks[t].subtractiveSat = subtractiveSat; tasks[t].halation = 0;
+                        tasks[t].vignette = vignette; tasks[t].grainSize = grainSize;
+                        tasks[t].advancedGrainExperimental = advancedGrainExperimental;
+                        tasks[t].opac_mapped = opac_m; tasks[t].map = map;
+                        tasks[t].nativeLut = localLut.data(); tasks[t].nativeLutSize = localLutSize;
+                        tasks[t].lutMax = localLutSize - 1; tasks[t].lutSize2 = localLutSize * localLutSize;
+                    } else {
+                        tasks[t].kind = KERNEL_YUV;
+                        tasks[t].cx = cx; tasks[t].cy_center = cy_center; tasks[t].vig_coef = vig_coef;
+                        tasks[t].shadowToe = shadowToe; tasks[t].rollOff = rollOff;
+                        tasks[t].colorChrome = colorChrome; tasks[t].chromeBlue = chromeBlue;
+                        tasks[t].subtractiveSat = subtractiveSat; tasks[t].halation = 0;
+                        tasks[t].vignette = vignette; tasks[t].grainSize = grainSize;
+                        tasks[t].advancedGrainExperimental = advancedGrainExperimental;
+                        tasks[t].rollLut = roll;
+                    }
+                }
+
+                if (active_workers > 1) {
+                    pthread_mutex_lock(&g_pool.lock);
+                    g_pool.active_workers = active_workers - 1;
+                    g_pool.completed_workers = 0;
+                    for (int t = 1; t < active_workers; t++) {
+                        g_pool.tasks[t] = tasks[t];
+                        g_pool.start_work[t] = true;
+                    }
+                    pthread_cond_broadcast(&g_pool.cond_work);
+                    pthread_mutex_unlock(&g_pool.lock);
+                }
+                dispatch_row_kernel(&tasks[0]);
+                if (active_workers > 1) {
+                    pthread_mutex_lock(&g_pool.lock);
+                    while (g_pool.completed_workers < g_pool.active_workers) {
+                        pthread_cond_wait(&g_pool.cond_done, &g_pool.lock);
+                    }
+                    pthread_mutex_unlock(&g_pool.lock);
                 }
             }
 
-            // Execute Bloom/Halation sequentially since it needs sliding window over r[]
+            // --- STAGE 2: Bloom/Halation on kernel-processed pr_rows[] → orw[] ---
+            unsigned char** bloom_src = pb ? pr_rows : r;  // fallback if alloc failed
             for (int i = 0; i < rtp; i++) {
                 int ay = pr + i;
                 if (!applyCrop || (ay >= sk && ay < sk + fh)) {
                     unsigned char* win[21];
-                    for (int w = 0; w < 21; w++) win[w] = r[i + w];
+                    for (int w = 0; w < 21; w++) win[w] = bloom_src[i + w];
                     memcpy(orw[i], win[10], cd.output_width * 3);
 
                     apply_bloom_halation(win, orw[i], cd.output_width, ay, !use_rgb, bloom, halation, grain_seed,
@@ -582,27 +653,58 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
                 }
             }
 
-            if (active_workers > 1) {
-                pthread_mutex_lock(&g_pool.lock);
-                g_pool.active_workers = active_workers - 1;
-                g_pool.completed_workers = 0;
-                for (int t = 1; t < active_workers; t++) {
-                    g_pool.tasks[t] = tasks[t];
-                    g_pool.start_work[t] = true;
+            // --- STAGE 3: Grain on orw[] — LAST (film physics) ---
+            if (needs_post_grain) {
+                int active_workers = worker_count;
+                if (active_workers > rtp) active_workers = rtp;
+                if (rtp < worker_count * 16) active_workers = 1;
+
+                RowKernelTask grain_tasks[4];
+                for (int t = 0; t < active_workers; t++) {
+                    int start = (rtp * t) / active_workers;
+                    int end = (rtp * (t + 1)) / active_workers;
+
+                    grain_tasks[t].base = ob;
+                    grain_tasks[t].rowStride = rs;
+                    grain_tasks[t].width = cd.output_width;
+                    grain_tasks[t].startY = pr;
+                    grain_tasks[t].rowStart = start;
+                    grain_tasks[t].rowEnd = end;
+                    grain_tasks[t].applyCrop = applyCrop;
+                    grain_tasks[t].sk = sk;
+                    grain_tasks[t].fh = fh;
+                    grain_tasks[t].scaleDenom = scaleDenom;
+                    grain_tasks[t].grain = grain;
+                    grain_tasks[t].grainSize = grainSize;
+                    grain_tasks[t].advancedGrainExperimental = advancedGrainExperimental;
+                    grain_tasks[t].externalTex = externalTex;
+                    grain_tasks[t].is1024Grain = is_1024_grain;
+                    grain_tasks[t].grainTransform = grainTransform;
+                    grain_tasks[t].baseSeed = grain_seed;
+                    grain_tasks[t].kind = use_rgb ? KERNEL_GRAIN_ONLY_RGB : KERNEL_GRAIN_ONLY_YUV;
                 }
-                pthread_cond_broadcast(&g_pool.cond_work);
-                pthread_mutex_unlock(&g_pool.lock);
+
+                if (active_workers > 1) {
+                    pthread_mutex_lock(&g_pool.lock);
+                    g_pool.active_workers = active_workers - 1;
+                    g_pool.completed_workers = 0;
+                    for (int t = 1; t < active_workers; t++) {
+                        g_pool.tasks[t] = grain_tasks[t];
+                        g_pool.start_work[t] = true;
+                    }
+                    pthread_cond_broadcast(&g_pool.cond_work);
+                    pthread_mutex_unlock(&g_pool.lock);
+                }
+                dispatch_row_kernel(&grain_tasks[0]);
+                if (active_workers > 1) {
+                    pthread_mutex_lock(&g_pool.lock);
+                    while (g_pool.completed_workers < g_pool.active_workers) {
+                        pthread_cond_wait(&g_pool.cond_done, &g_pool.lock);
+                    }
+                    pthread_mutex_unlock(&g_pool.lock);
+                }
             }
 
-            dispatch_row_kernel(&tasks[0]);
-
-            if (active_workers > 1) {
-                pthread_mutex_lock(&g_pool.lock);
-                while (g_pool.completed_workers < g_pool.active_workers) {
-                    pthread_cond_wait(&g_pool.cond_done, &g_pool.lock);
-                }
-                pthread_mutex_unlock(&g_pool.lock);
-            }
             t_kernel += (get_time_ms() - t_k_start);
 
             long long t_e_start = get_time_ms();
@@ -616,6 +718,8 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
 
             pr += rtp;
         }
+
+        if (pb) free(pb);
     }
 
     long long t_after_row_loop = get_time_ms();
@@ -629,9 +733,10 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
     long long encode_finish = t_encode_finish - t_after_row_loop;
     long long total = t_encode_finish - st;
     
-    char perf_buf[256];
-    snprintf(perf_buf, sizeof(perf_buf), "PERF: total=%lldms (setup=%lldms decode=%lldms kernel=%lldms encode=%lldms cleanup=%lldms) scale=%d W=%d H=%d",
-             total, decode_setup, t_decode, t_kernel, t_encode, encode_finish, scaleDenom, cd.output_width, cd.output_height);
+    char perf_buf[512];
+    snprintf(perf_buf, sizeof(perf_buf), "PERF: total=%lldms (setup=%lldms decode=%lldms kernel=%lldms encode=%lldms cleanup=%lldms) scale=%d W=%d H=%d bloom=%d halation=%d grain=%d engine=%d cores=%d",
+             total, decode_setup, t_decode, t_kernel, t_encode, encode_finish, scaleDenom, cd.output_width, cd.output_height,
+             (int)bloom, (int)halation, (int)grain, (int)advancedGrainExperimental, (int)numCores);
     __android_log_print(ANDROID_LOG_DEBUG, "JPEG.CAM", "%s", perf_buf);
     
     jclass debugLogClass = env->FindClass("com/github/ma1co/pmcademo/app/DebugLog");

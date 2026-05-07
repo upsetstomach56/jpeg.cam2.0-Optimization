@@ -1,4 +1,4 @@
-﻿#ifndef PROCESS_KERNEL_H
+#ifndef PROCESS_KERNEL_H
 #define PROCESS_KERNEL_H
 
 #include <stdint.h>
@@ -674,22 +674,22 @@ static inline void apply_bloom_halation(
     // 1. Resolution-Aware Alphas & Intensities
     int alpha, b_mix;
 
-    if (bloom == 1) {        // Local 1/8 (Tight radius, extremely subtle mix)
+    if (bloom == 5) {        // Local 1/8 (Tight radius, extremely subtle mix)
         alpha = (scaleDenom == 4) ? 180 : ((scaleDenom == 2) ? 210 : 230);
         b_mix = 45;
-    } else if (bloom == 2) { // Full 1/8 (Wide radius, extremely subtle mix)
+    } else if (bloom == 6) { // Full 1/8 (Wide radius, extremely subtle mix)
         alpha = (scaleDenom == 4) ? 230 : ((scaleDenom == 2) ? 245 : 252);
         b_mix = 45;
-    } else if (bloom == 3) { // Local 1/4 (Tight radius, subtle mix)
+    } else if (bloom == 1) { // Local 1/4 (Tight radius, subtle mix)
         alpha = (scaleDenom == 4) ? 180 : ((scaleDenom == 2) ? 210 : 230);
         b_mix = 90;
-    } else if (bloom == 4) { // Full 1/4 (Wide radius, subtle mix)
+    } else if (bloom == 2) { // Full 1/4 (Wide radius, subtle mix)
         alpha = (scaleDenom == 4) ? 230 : ((scaleDenom == 2) ? 245 : 252);
         b_mix = 90;
-    } else if (bloom == 5) { // Local 1/2 (Tight radius, heavy mix)
+    } else if (bloom == 3) { // Local 1/2 (Tight radius, heavy mix)
         alpha = (scaleDenom == 4) ? 180 : ((scaleDenom == 2) ? 210 : 230);
         b_mix = 160;
-    } else if (bloom == 6) { // Full 1/2 (Wide radius, heavy mix)
+    } else if (bloom == 4) { // Full 1/2 (Wide radius, heavy mix)
         alpha = (scaleDenom == 4) ? 230 : ((scaleDenom == 2) ? 245 : 252);
         b_mix = 160;
     } else {
@@ -1461,6 +1461,130 @@ static inline void process_row_yuv_texture_fast(
         p[1] = (uint8_t)CLAMP(128 + cb);
         p[2] = (uint8_t)CLAMP(128 + cr);
         texX = (texX + texStep) & texPeriodMask;
+    }
+}
+
+// ==========================================
+// GRAIN-ONLY PASSES (for bloom path: grain applied AFTER bloom)
+// In real film: LUT → tone → color → vignette → bloom → GRAIN (last)
+// ==========================================
+
+// Grain-only pass for RGB data (post-bloom).
+// Applies Engine 2 (texture overlay) or Legacy (algorithmic) grain.
+// Engine 1 (crystal, advancedGrainExperimental==1) is pre-LUT and stays in the main kernel.
+static inline void process_grain_only_rgb(
+    uint8_t* row, int width, int abs_y,
+    int grain, int grainSize, int scaleDenom, int advancedGrainExperimental, uint32_t& seed,
+    const uint8_t* externalGrainTexture = NULL,
+    bool is_1024_grain = false,
+    int grainTransform = 0)
+{
+    int s_grain = (grain * 40) + (grain * grain * 12);
+    s_grain = (s_grain * grain_resolution_scale256(scaleDenom) + 128) >> 8;
+    if (s_grain <= 0) return;
+    const int texture_base_mix = (grain >= 5) ? 256 : (grain * 51);
+
+    for (int x = 0; x < width; x++) {
+        int i = x * 3;
+        int outR = row[i], outG = row[i+1], outB = row[i+2];
+        int targetY = (outR*77 + outG*150 + outB*29) >> 8;
+
+        if (advancedGrainExperimental == 2 && externalGrainTexture != NULL) {
+            int env = grain_amount_mask(targetY);
+            if (env > 0) {
+                int gRGB[3];
+                int texX = x * scaleDenom;
+                int texY = abs_y * scaleDenom;
+                if (is_1024_grain) {
+                    if (grainTransform == 0) sample_tex_nearest_1024(externalGrainTexture, texX, texY, gRGB);
+                    else sample_tex_nearest_1024_transform(externalGrainTexture, texX, texY, grainTransform, gRGB);
+                } else {
+                    if (grainTransform == 0) sample_tex_nearest_512_xor(externalGrainTexture, texX, texY, gRGB);
+                    else sample_tex_nearest_512_xor_transform(externalGrainTexture, texX, texY, grainTransform, gRGB);
+                }
+
+                int blendedR = blend_overlay_cached(outR, gRGB[0]);
+                int blendedG = blend_overlay_cached(outG, gRGB[1]);
+                int blendedB = blend_overlay_cached(outB, gRGB[2]);
+
+                int mix = (texture_base_mix * env) >> 8;
+                outR = outR + (((blendedR - outR) * mix) >> 8);
+                outG = outG + (((blendedG - outG) * mix) >> 8);
+                outB = outB + (((blendedB - outB) * mix) >> 8);
+            }
+        } else if (advancedGrainExperimental == 0) {
+            int noise = legacy_grain_noise(x, abs_y, grainSize, seed);
+            int mask = (targetY < 128) ? targetY : (255 - targetY);
+            int gv = (noise * mask * s_grain) >> 15;
+            gv = (gv * 220) >> 8;
+            outR = CLAMP(outR + gv);
+            outG = CLAMP(outG + gv);
+            outB = CLAMP(outB + gv);
+        }
+
+        row[i] = (uint8_t)CLAMP(outR); row[i+1] = (uint8_t)CLAMP(outG); row[i+2] = (uint8_t)CLAMP(outB);
+    }
+}
+
+// Grain-only pass for YUV data (post-bloom).
+static inline void process_grain_only_yuv(
+    uint8_t* row, int width, int abs_y,
+    int grain, int grainSize, int scaleDenom, int advancedGrainExperimental, uint32_t& seed,
+    const uint8_t* externalGrainTexture = NULL,
+    bool is_1024_grain = false,
+    int grainTransform = 0)
+{
+    int s_grain = (grain * 40) + (grain * grain * 12);
+    s_grain = (s_grain * grain_resolution_scale256(scaleDenom) + 128) >> 8;
+    if (s_grain <= 0) return;
+    const int texture_base_mix = (grain >= 5) ? 256 : (grain * 51);
+
+    for (int x = 0; x < width; x++) {
+        int i = x * 3;
+        int outY = row[i];
+        int cb = row[i+1] - 128;
+        int cr = row[i+2] - 128;
+
+        if (advancedGrainExperimental == 2 && externalGrainTexture != NULL) {
+            int env = grain_amount_mask(outY);
+            if (env > 0) {
+                int gRGB[3];
+                int texX = x * scaleDenom;
+                int texY = abs_y * scaleDenom;
+                if (is_1024_grain) {
+                    if (grainTransform == 0) sample_tex_nearest_1024(externalGrainTexture, texX, texY, gRGB);
+                    else sample_tex_nearest_1024_transform(externalGrainTexture, texX, texY, grainTransform, gRGB);
+                } else {
+                    if (grainTransform == 0) sample_tex_nearest_512_xor(externalGrainTexture, texX, texY, gRGB);
+                    else sample_tex_nearest_512_xor_transform(externalGrainTexture, texX, texY, grainTransform, gRGB);
+                }
+
+                int r = outY + ((cr * 359) >> 8);
+                int g = outY - ((cb * 88 + cr * 183) >> 8);
+                int b = outY + ((cb * 454) >> 8);
+
+                int blendedR = blend_overlay_cached(r, gRGB[0]);
+                int blendedG = blend_overlay_cached(g, gRGB[1]);
+                int blendedB = blend_overlay_cached(b, gRGB[2]);
+
+                int mix = (texture_base_mix * env) >> 8;
+                r = r + (((blendedR - r) * mix) >> 8);
+                g = g + (((blendedG - g) * mix) >> 8);
+                b = b + (((blendedB - b) * mix) >> 8);
+
+                outY = (r * 77 + g * 150 + b * 29) >> 8;
+                cb = ((-38 * r - 74 * g + 112 * b) >> 8);
+                cr = ((112 * r - 94 * g - 18 * b) >> 8);
+            }
+        } else if (advancedGrainExperimental == 0) {
+            int noise = legacy_grain_noise(x, abs_y, grainSize, seed);
+            int mask = (outY < 128) ? outY : (255 - outY);
+            int gv = (noise * mask * s_grain) >> 15;
+            gv = (gv * 220) >> 8;
+            outY = CLAMP(outY + gv);
+        }
+
+        row[i] = (uint8_t)CLAMP(outY); row[i+1] = (uint8_t)CLAMP(128+cb); row[i+2] = (uint8_t)CLAMP(128+cr);
     }
 }
 
