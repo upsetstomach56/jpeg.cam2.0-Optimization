@@ -509,10 +509,13 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
             t_encode += (get_time_ms() - t_e_start);
         }
     } else {
+        long long t_d_start = get_time_ms();
         if(cd.output_height>0){ rpx[0]=r[10]; jpeg_read_scanlines(&cd,rpx,1); for(int i=0; i<10; i++) memcpy(r[i],r[10],rs); }
         for(int i=11; i<BUF; i++){ if(cd.output_scanline < cd.output_height){ rpx[0]=r[i]; jpeg_read_scanlines(&cd,rpx,1); } else memcpy(r[i],r[i-1],rs); }
+        t_decode += (get_time_ms() - t_d_start);
 
         int pr = 0; while(pr < (int)cd.output_height){
+            long long t_k_start = get_time_ms();
             int rtp = std::min(CHK, (int)cd.output_height-pr);
             for (int i = 0; i < rtp; i++) {
                 int ay = pr + i;
@@ -597,10 +600,17 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
                 }
                 pthread_mutex_unlock(&g_pool.lock);
             }
+            t_kernel += (get_time_ms() - t_k_start);
 
+            long long t_e_start = get_time_ms();
             for(int i=0; i<rtp; i++){ int ay=pr+i; if(!applyCrop||(ay>=sk && ay<sk+fh)){ rpx[0]=orw[i]; jpeg_write_scanlines(&cc,rpx,1); } }
+            t_encode += (get_time_ms() - t_e_start);
+
+            long long t_d_chunk = get_time_ms();
             unsigned char* tmpx[256]; for(int i=0; i<rtp; i++) tmpx[i]=r[i]; for(int i=0; i<BUF-rtp; i++) r[i]=r[i+rtp];
             for(int i=0; i<rtp; i++){ int di=BUF-rtp+i; r[di]=tmpx[i]; if(cd.output_scanline<cd.output_height){ rpx[0]=r[di]; jpeg_read_scanlines(&cd,rpx,1); } else memcpy(r[di],r[di-1],rs); }
+            t_decode += (get_time_ms() - t_d_chunk);
+
             pr += rtp;
         }
     }
