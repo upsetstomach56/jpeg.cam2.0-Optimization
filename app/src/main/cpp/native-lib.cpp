@@ -8,6 +8,7 @@
 #include <math.h>
 #include <sys/time.h>
 #include <pthread.h>
+#include <malloc.h>
 #include "jpeglib.h"
 #include <android/log.h>
 #include "process_kernel.h"
@@ -23,6 +24,12 @@ std::vector<uint8_t> nativeGrainTexture;
 int nativeLastGrainTransform = -1;
 
 static pthread_mutex_t g_lut_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t g_process_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+struct ProcessLock {
+    ProcessLock() { pthread_mutex_lock(&g_process_mutex); }
+    ~ProcessLock() { pthread_mutex_unlock(&g_process_mutex); }
+};
 
 struct my_error_mgr { struct jpeg_error_mgr pub; jmp_buf setjmp_buffer; };
 METHODDEF(void) my_error_exit (j_common_ptr cinfo) {
@@ -30,38 +37,81 @@ METHODDEF(void) my_error_exit (j_common_ptr cinfo) {
     longjmp(myerr->setjmp_buffer, 1);
 }
 
-struct YuvTextureFastRowsTask {
+enum KernelKind { KERNEL_YUV_FAST, KERNEL_RGB, KERNEL_YUV };
+
+struct RowKernelTask {
+    KernelKind kind;
     unsigned char* base;
     int rowStride;
     int width;
     int startY;
     int rowStart;
     int rowEnd;
-    int grain;
+    bool applyCrop;
+    int sk;
+    int fh;
+
     int scaleDenom;
-    const YuvTextureFastLut* fastLut;
+    int grain;
     const uint8_t* externalTex;
     bool is1024Grain;
     int grainTransform;
+    uint32_t baseSeed;
+    bool is_mono;
+
+    const YuvTextureFastLut* fastLut;
+
+    long long cx;
+    long long cy_center;
+    long long vig_coef;
+    int shadowToe;
+    int rollOff;
+    int colorChrome;
+    int chromeBlue;
+    int subtractiveSat;
+    int halation;
+    int vignette;
+    int grainSize;
+    int advancedGrainExperimental;
+    
+    int opac_mapped;
+    const int* map;
+    const uint8_t* nativeLut;
+    int nativeLutSize;
+    int lutMax;
+    int lutSize2;
+
+    const uint8_t* rollLut;
 };
 
-static void process_yuv_texture_fast_rows(YuvTextureFastRowsTask* task) {
-    for (int row = task->rowStart; row < task->rowEnd; row++) {
-        process_row_yuv_texture_fast(
-            task->base + row * task->rowStride,
-            task->width,
-            task->startY + row,
-            task->grain,
-            task->scaleDenom,
-            *task->fastLut,
-            task->externalTex,
-            task->is1024Grain,
-            task->grainTransform);
+static void dispatch_row_kernel(RowKernelTask* task) {
+    if (task->kind == KERNEL_YUV_FAST) {
+        for (int row = task->rowStart; row < task->rowEnd; row++) {
+            int ay = task->startY + row;
+            if (task->applyCrop && (ay < task->sk || ay >= task->sk + task->fh)) continue;
+            uint8_t* row_ptr = task->base + row * task->rowStride;
+            process_row_yuv_texture_fast(row_ptr, task->width, ay, task->grain, task->scaleDenom, *task->fastLut, task->externalTex, task->is1024Grain, task->grainTransform);
+        }
+    } else if (task->kind == KERNEL_RGB) {
+        for (int row = task->rowStart; row < task->rowEnd; row++) {
+            int ay = task->startY + row;
+            if (task->applyCrop && (ay < task->sk || ay >= task->sk + task->fh)) continue;
+            uint8_t* row_ptr = task->base + row * task->rowStride;
+            uint32_t seed = task->baseSeed + (uint32_t)(ay * 987654321u); // stable seed per row
+            process_row_rgb(row_ptr, task->width, ay, task->cx, task->cy_center, task->vig_coef, task->shadowToe, task->rollOff, task->colorChrome, task->chromeBlue, task->subtractiveSat, task->halation, task->vignette, task->grain, task->grainSize, task->scaleDenom, task->advancedGrainExperimental, seed, task->opac_mapped, task->map, task->nativeLut, task->nativeLutSize, task->lutMax, task->lutSize2, task->externalTex, task->is1024Grain, task->grainTransform, task->is_mono);
+        }
+    } else if (task->kind == KERNEL_YUV) {
+        for (int row = task->rowStart; row < task->rowEnd; row++) {
+            int ay = task->startY + row;
+            if (task->applyCrop && (ay < task->sk || ay >= task->sk + task->fh)) continue;
+            uint8_t* row_ptr = task->base + row * task->rowStride;
+            uint32_t seed = task->baseSeed + (uint32_t)(ay * 987654321u); // stable seed per row
+            process_row_yuv(row_ptr, task->width, ay, task->cx, task->cy_center, task->vig_coef, task->shadowToe, task->rollOff, task->colorChrome, task->chromeBlue, task->subtractiveSat, task->halation, task->vignette, task->grain, task->grainSize, task->scaleDenom, task->advancedGrainExperimental, seed, task->rollLut, task->externalTex, task->is1024Grain, task->grainTransform, task->is_mono);
+        }
     }
 }
-
 static void* yuv_texture_fast_rows_thread(void* data) {
-    process_yuv_texture_fast_rows((YuvTextureFastRowsTask*)data);
+    dispatch_row_kernel((RowKernelTask*)data);
     return NULL;
 }
 
@@ -69,7 +119,7 @@ struct WorkerPool {
     pthread_mutex_t lock;
     pthread_cond_t cond_work;
     pthread_cond_t cond_done;
-    YuvTextureFastRowsTask tasks[4];
+    RowKernelTask tasks[4];
     bool start_work[4];
     bool terminate;
     int active_workers;
@@ -93,7 +143,7 @@ static void* persistent_worker_thread(void* arg) {
         g_pool.start_work[id] = false;
         pthread_mutex_unlock(&g_pool.lock);
         
-        process_yuv_texture_fast_rows(&g_pool.tasks[id]);
+        dispatch_row_kernel(&g_pool.tasks[id]);
         
         pthread_mutex_lock(&g_pool.lock);
         g_pool.completed_workers++;
@@ -222,9 +272,16 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
     jint bloom, jint advancedGrainExperimental, jint jpegQuality,
     jboolean isMono, jboolean applyCrop, jint numCores) {
 
+    ProcessLock plock;
+
     long long st = get_time_ms(); const char *ifn = env->GetStringUTFChars(inPath, NULL); const char *ofn = env->GetStringUTFChars(outPath, NULL);
     FILE *inf = fopen(ifn, "rb"), *ouf = fopen(ofn, "wb");
     if(!inf||!ouf){ if(inf)fclose(inf); if(ouf)fclose(ouf); env->ReleaseStringUTFChars(inPath,ifn); env->ReleaseStringUTFChars(outPath,ofn); return JNI_FALSE; }
+
+    static char in_buf[262144];
+    static char out_buf[262144];
+    setvbuf(inf, in_buf, _IOFBF, sizeof(in_buf));
+    setvbuf(ouf, out_buf, _IOFBF, sizeof(out_buf));
 
     struct jpeg_decompress_struct cd; struct my_error_mgr jd; cd.err = jpeg_std_error(&jd.pub); jd.pub.error_exit = my_error_exit;
     if(setjmp(jd.setjmp_buffer)){ jpeg_destroy_decompress(&cd); fclose(inf); fclose(ouf); env->ReleaseStringUTFChars(inPath,ifn); env->ReleaseStringUTFChars(outPath,ofn); return JNI_FALSE; }
@@ -274,7 +331,7 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
         mark = mark->next;
     }
 
-    int rs = cd.output_width*3;
+    int rs = (cd.output_width * 3 + 15) & ~15; // Align row stride to 16 bytes
     const uint8_t* externalTex = localGrainTexture.empty() ? NULL : localGrainTexture.data();
     bool is_1024_grain = localGrainTexture.size() > 1000000;
     bool use_fast_yuv_texture_candidate = (!use_rgb && advancedGrainExperimental == 2 && externalTex != NULL
@@ -284,8 +341,8 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
     int CHK = (use_fast_yuv_texture_candidate && !applyCrop) ? 128 : 64;
     int BUF = CHK + 20;
 
-    unsigned char* rb = (unsigned char*)malloc(BUF*rs);
-    unsigned char* ob = (unsigned char*)malloc(CHK*rs);
+    unsigned char* rb = (unsigned char*)memalign(16, BUF*rs);
+    unsigned char* ob = (unsigned char*)memalign(16, CHK*rs);
     if (!rb || !ob) {
         if (rb) free(rb);
         if (ob) free(ob);
@@ -337,106 +394,105 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
 
     JSAMPROW rpx[1];
 
+    if (numCores > 1 && !g_pool.initialized) {
+        init_worker_pool();
+    }
+    int worker_count = numCores;
+    if (worker_count < 1) worker_count = 1;
+    if (worker_count > 4) worker_count = 4;
+
     bool row_stream_mode = (bloom <= 0 && halation <= 0 && advancedGrainExperimental != 1);
-    bool use_fast_yuv_texture_chunked = use_fast_yuv_texture && !applyCrop;
     if (row_stream_mode) {
-        if (use_fast_yuv_texture_chunked) {
-            int worker_count = numCores;
-            if (worker_count < 1) worker_count = 1;
-            if (worker_count > 4) worker_count = 4;
+        while (cd.output_scanline < cd.output_height) {
+            int ay = cd.output_scanline;
+            int rows_read = 0;
+            while (rows_read < CHK && cd.output_scanline < cd.output_height) {
+                JDIMENSION got = jpeg_read_scanlines(&cd, &r[rows_read], CHK - rows_read);
+                if (got == 0) break;
+                rows_read += (int)got;
+            }
+            if (rows_read <= 0) break;
 
-            while (cd.output_scanline < cd.output_height) {
-                int ay = cd.output_scanline;
-                int rows_read = 0;
-                while (rows_read < CHK && cd.output_scanline < cd.output_height) {
-                    JDIMENSION got = jpeg_read_scanlines(&cd, &r[rows_read], CHK - rows_read);
-                    if (got == 0) break;
-                    rows_read += (int)got;
-                }
-                if (rows_read <= 0) break;
+            int active_workers = worker_count;
+            if (active_workers > rows_read) active_workers = rows_read;
+            if (rows_read < worker_count * 16) active_workers = 1;
 
-                int active_workers = worker_count;
-                if (active_workers > rows_read) active_workers = rows_read;
-                if (rows_read < worker_count * 16) active_workers = 1;
+            RowKernelTask tasks[4];
+            for (int t = 0; t < active_workers; t++) {
+                int start = (rows_read * t) / active_workers;
+                int end = (rows_read * (t + 1)) / active_workers;
+                
+                tasks[t].base = rb;
+                tasks[t].rowStride = rs;
+                tasks[t].width = cd.output_width;
+                tasks[t].startY = ay;
+                tasks[t].rowStart = start;
+                tasks[t].rowEnd = end;
+                tasks[t].applyCrop = applyCrop;
+                tasks[t].sk = sk;
+                tasks[t].fh = fh;
 
-                if (!g_pool.initialized && active_workers > 1) {
-                    init_worker_pool();
-                }
+                tasks[t].scaleDenom = scaleDenom;
+                tasks[t].grain = grain;
+                tasks[t].externalTex = externalTex;
+                tasks[t].is1024Grain = is_1024_grain;
+                tasks[t].grainTransform = grainTransform;
+                tasks[t].baseSeed = grain_seed;
+                tasks[t].is_mono = (bool)isMono;
 
-                YuvTextureFastRowsTask tasks[4];
-                for (int t = 0; t < active_workers; t++) {
-                    int start = (rows_read * t) / active_workers;
-                    int end = (rows_read * (t + 1)) / active_workers;
-                    tasks[t].base = rb;
-                    tasks[t].rowStride = rs;
-                    tasks[t].width = cd.output_width;
-                    tasks[t].startY = ay;
-                    tasks[t].rowStart = start;
-                    tasks[t].rowEnd = end;
-                    tasks[t].grain = grain;
-                    tasks[t].scaleDenom = scaleDenom;
+                if (use_rgb) {
+                    tasks[t].kind = KERNEL_RGB;
+                    tasks[t].cx = cx; tasks[t].cy_center = cy_center; tasks[t].vig_coef = vig_coef;
+                    tasks[t].shadowToe = shadowToe; tasks[t].rollOff = rollOff;
+                    tasks[t].colorChrome = colorChrome; tasks[t].chromeBlue = chromeBlue;
+                    tasks[t].subtractiveSat = subtractiveSat; tasks[t].halation = halation;
+                    tasks[t].vignette = vignette; tasks[t].grainSize = grainSize;
+                    tasks[t].advancedGrainExperimental = advancedGrainExperimental;
+                    tasks[t].opac_mapped = opac_m; tasks[t].map = map;
+                    tasks[t].nativeLut = localLut.data(); tasks[t].nativeLutSize = localLutSize;
+                    tasks[t].lutMax = localLutSize - 1; tasks[t].lutSize2 = localLutSize * localLutSize;
+                } else if (use_fast_yuv_texture) {
+                    tasks[t].kind = KERNEL_YUV_FAST;
                     tasks[t].fastLut = &fast_yuv_texture_lut;
-                    tasks[t].externalTex = externalTex;
-                    tasks[t].is1024Grain = is_1024_grain;
-                    tasks[t].grainTransform = grainTransform;
-                }
-
-                if (active_workers > 1) {
-                    pthread_mutex_lock(&g_pool.lock);
-                    g_pool.active_workers = active_workers - 1; // Thread 0 is main thread
-                    g_pool.completed_workers = 0;
-                    for (int t = 1; t < active_workers; t++) {
-                        g_pool.tasks[t] = tasks[t];
-                        g_pool.start_work[t] = true;
-                    }
-                    pthread_cond_broadcast(&g_pool.cond_work);
-                    pthread_mutex_unlock(&g_pool.lock);
-                }
-
-                // Process first chunk on the main thread
-                process_yuv_texture_fast_rows(&tasks[0]);
-
-                if (active_workers > 1) {
-                    pthread_mutex_lock(&g_pool.lock);
-                    while (g_pool.completed_workers < g_pool.active_workers) {
-                        pthread_cond_wait(&g_pool.cond_done, &g_pool.lock);
-                    }
-                    pthread_mutex_unlock(&g_pool.lock);
-                }
-
-                int rows_written = 0;
-                while (rows_written < rows_read) {
-                    JDIMENSION wrote = jpeg_write_scanlines(&cc, &r[rows_written], rows_read - rows_written);
-                    if (wrote == 0) break;
-                    rows_written += (int)wrote;
+                } else {
+                    tasks[t].kind = KERNEL_YUV;
+                    tasks[t].cx = cx; tasks[t].cy_center = cy_center; tasks[t].vig_coef = vig_coef;
+                    tasks[t].shadowToe = shadowToe; tasks[t].rollOff = rollOff;
+                    tasks[t].colorChrome = colorChrome; tasks[t].chromeBlue = chromeBlue;
+                    tasks[t].subtractiveSat = subtractiveSat; tasks[t].halation = halation;
+                    tasks[t].vignette = vignette; tasks[t].grainSize = grainSize;
+                    tasks[t].advancedGrainExperimental = advancedGrainExperimental;
+                    tasks[t].rollLut = roll;
                 }
             }
-        } else {
-            while (cd.output_scanline < cd.output_height) {
-                int ay = cd.output_scanline;
-                rpx[0] = r[0];
-                jpeg_read_scanlines(&cd, rpx, 1);
 
-                if (!applyCrop || (ay >= sk && ay < sk + fh)) {
-                    if (use_rgb) {
-                        process_row_rgb(r[0], cd.output_width, ay, cx, cy_center, vig_coef,
-                            shadowToe, rollOff, colorChrome, chromeBlue, subtractiveSat, halation, vignette,
-                            grain, grainSize, scaleDenom, advancedGrainExperimental, grain_seed,
-                            opac_m, map, localLut.data(),
-                            localLutSize, localLutSize - 1, localLutSize * localLutSize,
-                            externalTex, is_1024_grain, grainTransform, (bool)isMono);
-                    } else if (use_fast_yuv_texture) {
-                        process_row_yuv_texture_fast(r[0], cd.output_width, ay,
-                            grain, scaleDenom, fast_yuv_texture_lut,
-                            externalTex, is_1024_grain, grainTransform);
-                    } else {
-                        process_row_yuv(r[0], cd.output_width, ay, cx, cy_center, vig_coef,
-                            shadowToe, rollOff, colorChrome, chromeBlue, subtractiveSat, halation, vignette,
-                            grain, grainSize, scaleDenom, advancedGrainExperimental, grain_seed,
-                            roll, externalTex, is_1024_grain, grainTransform, (bool)isMono);
-                    }
-                    jpeg_write_scanlines(&cc, rpx, 1);
+            if (active_workers > 1) {
+                pthread_mutex_lock(&g_pool.lock);
+                g_pool.active_workers = active_workers - 1;
+                g_pool.completed_workers = 0;
+                for (int t = 1; t < active_workers; t++) {
+                    g_pool.tasks[t] = tasks[t];
+                    g_pool.start_work[t] = true;
                 }
+                pthread_cond_broadcast(&g_pool.cond_work);
+                pthread_mutex_unlock(&g_pool.lock);
+            }
+
+            dispatch_row_kernel(&tasks[0]);
+
+            if (active_workers > 1) {
+                pthread_mutex_lock(&g_pool.lock);
+                while (g_pool.completed_workers < g_pool.active_workers) {
+                    pthread_cond_wait(&g_pool.cond_done, &g_pool.lock);
+                }
+                pthread_mutex_unlock(&g_pool.lock);
+            }
+
+            int rows_written = 0;
+            while (rows_written < rows_read) {
+                JDIMENSION wrote = jpeg_write_scanlines(&cc, &r[rows_written], rows_read - rows_written);
+                if (wrote == 0) break;
+                rows_written += (int)wrote;
             }
         }
     } else {
@@ -454,22 +510,81 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
 
                     apply_bloom_halation(win, orw[i], cd.output_width, ay, !use_rgb, bloom, halation, grain_seed,
                         work_0, work_1, work_2, work_h, h_line, scaleDenom, (bool)isMono);
-
-                    if (use_rgb) {
-                        process_row_rgb(orw[i], cd.output_width, ay, cx, cy_center, vig_coef,
-                            shadowToe, rollOff, colorChrome, chromeBlue, subtractiveSat, 0, vignette,
-                            grain, grainSize, scaleDenom, advancedGrainExperimental, grain_seed,
-                            opac_m, map, localLut.data(),
-                            localLutSize, localLutSize - 1, localLutSize * localLutSize,
-                            externalTex, is_1024_grain, grainTransform, (bool)isMono);
-                    } else {
-                        process_row_yuv(orw[i], cd.output_width, ay, cx, cy_center, vig_coef,
-                            shadowToe, rollOff, colorChrome, chromeBlue, subtractiveSat, 0, vignette,
-                            grain, grainSize, scaleDenom, advancedGrainExperimental, grain_seed,
-                            roll, externalTex, is_1024_grain, grainTransform, (bool)isMono);
-                    }
                 }
             }
+
+            int active_workers = worker_count;
+            if (active_workers > rtp) active_workers = rtp;
+            if (rtp < worker_count * 16) active_workers = 1;
+
+            RowKernelTask tasks[4];
+            for (int t = 0; t < active_workers; t++) {
+                int start = (rtp * t) / active_workers;
+                int end = (rtp * (t + 1)) / active_workers;
+                
+                tasks[t].base = ob;
+                tasks[t].rowStride = rs;
+                tasks[t].width = cd.output_width;
+                tasks[t].startY = pr;
+                tasks[t].rowStart = start;
+                tasks[t].rowEnd = end;
+                tasks[t].applyCrop = applyCrop;
+                tasks[t].sk = sk;
+                tasks[t].fh = fh;
+
+                tasks[t].scaleDenom = scaleDenom;
+                tasks[t].grain = grain;
+                tasks[t].externalTex = externalTex;
+                tasks[t].is1024Grain = is_1024_grain;
+                tasks[t].grainTransform = grainTransform;
+                tasks[t].baseSeed = grain_seed;
+                tasks[t].is_mono = (bool)isMono;
+
+                if (use_rgb) {
+                    tasks[t].kind = KERNEL_RGB;
+                    tasks[t].cx = cx; tasks[t].cy_center = cy_center; tasks[t].vig_coef = vig_coef;
+                    tasks[t].shadowToe = shadowToe; tasks[t].rollOff = rollOff;
+                    tasks[t].colorChrome = colorChrome; tasks[t].chromeBlue = chromeBlue;
+                    tasks[t].subtractiveSat = subtractiveSat; tasks[t].halation = 0;
+                    tasks[t].vignette = vignette; tasks[t].grainSize = grainSize;
+                    tasks[t].advancedGrainExperimental = advancedGrainExperimental;
+                    tasks[t].opac_mapped = opac_m; tasks[t].map = map;
+                    tasks[t].nativeLut = localLut.data(); tasks[t].nativeLutSize = localLutSize;
+                    tasks[t].lutMax = localLutSize - 1; tasks[t].lutSize2 = localLutSize * localLutSize;
+                } else {
+                    tasks[t].kind = KERNEL_YUV;
+                    tasks[t].cx = cx; tasks[t].cy_center = cy_center; tasks[t].vig_coef = vig_coef;
+                    tasks[t].shadowToe = shadowToe; tasks[t].rollOff = rollOff;
+                    tasks[t].colorChrome = colorChrome; tasks[t].chromeBlue = chromeBlue;
+                    tasks[t].subtractiveSat = subtractiveSat; tasks[t].halation = 0;
+                    tasks[t].vignette = vignette; tasks[t].grainSize = grainSize;
+                    tasks[t].advancedGrainExperimental = advancedGrainExperimental;
+                    tasks[t].rollLut = roll;
+                }
+            }
+
+            if (active_workers > 1) {
+                pthread_mutex_lock(&g_pool.lock);
+                g_pool.active_workers = active_workers - 1;
+                g_pool.completed_workers = 0;
+                for (int t = 1; t < active_workers; t++) {
+                    g_pool.tasks[t] = tasks[t];
+                    g_pool.start_work[t] = true;
+                }
+                pthread_cond_broadcast(&g_pool.cond_work);
+                pthread_mutex_unlock(&g_pool.lock);
+            }
+
+            dispatch_row_kernel(&tasks[0]);
+
+            if (active_workers > 1) {
+                pthread_mutex_lock(&g_pool.lock);
+                while (g_pool.completed_workers < g_pool.active_workers) {
+                    pthread_cond_wait(&g_pool.cond_done, &g_pool.lock);
+                }
+                pthread_mutex_unlock(&g_pool.lock);
+            }
+
             for(int i=0; i<rtp; i++){ int ay=pr+i; if(!applyCrop||(ay>=sk && ay<sk+fh)){ rpx[0]=orw[i]; jpeg_write_scanlines(&cc,rpx,1); } }
             unsigned char* tmpx[256]; for(int i=0; i<rtp; i++) tmpx[i]=r[i]; for(int i=0; i<BUF-rtp; i++) r[i]=r[i+rtp];
             for(int i=0; i<rtp; i++){ int di=BUF-rtp+i; r[di]=tmpx[i]; if(cd.output_scanline<cd.output_height){ rpx[0]=r[di]; jpeg_read_scanlines(&cd,rpx,1); } else memcpy(r[di],r[di-1],rs); }

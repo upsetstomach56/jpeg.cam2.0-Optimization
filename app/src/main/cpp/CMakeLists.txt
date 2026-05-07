@@ -18,7 +18,13 @@ add_library(native-lib SHARED native-lib.cpp)
 
 # SPEED FIX: Optimize only our processing library so libjpeg-turbo keeps its
 # original build behavior and JPEG output stays as stable as possible.
-target_compile_options(native-lib PRIVATE -O3)
+target_compile_options(native-lib PRIVATE
+    -O3
+    -ffast-math
+    -march=armv7-a
+    -mtune=cortex-a5
+    -mfloat-abi=softfp
+)
 
 target_include_directories(native-lib PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/libjpeg-turbo

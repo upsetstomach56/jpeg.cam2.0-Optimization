@@ -12,7 +12,7 @@
 #define CLAMP(x) ((x) < 0 ? 0 : ((x) > 255 ? 255 : (x)))
 
 // Fast Integer Approximation of CSS 'Overlay' Blend Mode
-static inline int blend_overlay(int base, int blend) {
+inline int blend_overlay(int base, int blend) {
     base = CLAMP(base);
     blend = CLAMP(blend);
     if (base < 128) {
@@ -38,12 +38,12 @@ static inline int blend_overlay(int base, int blend) {
 // bloom, 0, 6
 // === END_METADATA ===
 
-static inline long long get_vig_coef(int vignette, long long max_dist_sq) {
+inline long long get_vig_coef(int vignette, long long max_dist_sq) {
     int s_vig = vignette * 12;
     return ((long long)((s_vig * 256) / 100) << 24) / (max_dist_sq > 0 ? max_dist_sq : 1);
 }
 
-static inline void generate_rolloff_lut(uint8_t* lut, int rollOff) {
+inline void generate_rolloff_lut(uint8_t* lut, int rollOff) {
     int s_roll = rollOff * 20;
     for (int i = 0; i < 256; i++) {
         int r_t = (i > 200) ? i - ((i - 200) * (i - 200) * s_roll) / 11000 : i;
@@ -51,14 +51,14 @@ static inline void generate_rolloff_lut(uint8_t* lut, int rollOff) {
     }
 }
 
-static inline uint32_t fast_rand(uint32_t* state) {
+inline uint32_t fast_rand(uint32_t* state) {
     uint32_t x = *state; x ^= x << 13; x ^= x >> 17; x ^= x << 5; *state = x; return x;
 }
 
 // ==========================================
 // ADVANCED GRAIN ENGINE (ATLAS & NOISE MATH)
 // ==========================================
-static inline uint32_t hash2d(uint32_t x, uint32_t y, uint32_t seed) {
+inline uint32_t hash2d(uint32_t x, uint32_t y, uint32_t seed) {
     uint32_t h = x * 0x9E3779B1u;
     h ^= y * 0x85EBCA77u;
     h ^= seed * 0xC2B2AE3Du;
@@ -70,26 +70,26 @@ static inline uint32_t hash2d(uint32_t x, uint32_t y, uint32_t seed) {
     return h;
 }
 
-static inline uint32_t next_rng(uint32_t& state) {
+inline uint32_t next_rng(uint32_t& state) {
     state = state * 1664525u + 1013904223u;
     return state;
 }
 
-static inline float rand_unit(uint32_t& state) {
+inline float rand_unit(uint32_t& state) {
     return float((next_rng(state) >> 8) & 0x00FFFFFFu) * (1.0f / 16777215.0f);
 }
 
-static inline float gaussianish(uint32_t& state) {
+inline float gaussianish(uint32_t& state) {
     float sum = 0.0f;
     for (int i = 0; i < 6; ++i) sum += rand_unit(state);
     return (sum - 3.0f) * 1.41421356f;
 }
 
-static inline int signed_hash8_xy(int x, int y, uint32_t seed) {
+inline int signed_hash8_xy(int x, int y, uint32_t seed) {
     return (int)(hash2d((uint32_t)x, (uint32_t)y, seed) & 255u) - 128;
 }
 
-static inline int grain_amount_mask(int y);
+inline int grain_amount_mask(int y);
 
 struct BakedGrainAtlas {
     int size;
@@ -117,7 +117,7 @@ struct BakedGrainAtlas {
     BakedGrainAtlas() : size(256), mask(255), ready(false) {}
 };
 
-static inline void blur_field(std::vector<float>& field, int size, int passes) {
+inline void blur_field(std::vector<float>& field, int size, int passes) {
     const int count = size * size;
     std::vector<float> tmp(count, 0.0f);
 
@@ -145,7 +145,7 @@ static inline void blur_field(std::vector<float>& field, int size, int passes) {
     }
 }
 
-static inline void generate_correlated_template(std::vector<int8_t>& out, int size, uint32_t seed, int blurA, int blurB, int blurC, float mixB, float mixC, int targetStd) {
+inline void generate_correlated_template(std::vector<int8_t>& out, int size, uint32_t seed, int blurA, int blurB, int blurC, float mixB, float mixC, int targetStd) {
     const int count = size * size;
     std::vector<float> a(count);
     std::vector<float> b(count);
@@ -192,7 +192,7 @@ static inline void generate_correlated_template(std::vector<int8_t>& out, int si
     }
 }
 
-static inline void draw_soft_dot(std::vector<float>& field, int size, float fx, float fy, float radius, float amplitude) {
+inline void draw_soft_dot(std::vector<float>& field, int size, float fx, float fy, float radius, float amplitude) {
     int ir = (int)std::ceil(radius * 1.85f);
     int cx = (int)std::floor(fx);
     int cy = (int)std::floor(fy);
@@ -218,7 +218,7 @@ static inline void draw_soft_dot(std::vector<float>& field, int size, float fx, 
     }
 }
 
-static inline void generate_point_template(std::vector<int8_t>& out, int size, uint32_t seed, int dotCount, int blurPasses, int targetStd) {
+inline void generate_point_template(std::vector<int8_t>& out, int size, uint32_t seed, int dotCount, int blurPasses, int targetStd) {
     const int count = size * size;
     std::vector<float> field(count, 0.0f);
     uint32_t state = hash2d((uint32_t)(size * 9), (uint32_t)dotCount, seed ^ 0xA24BAED4u);
@@ -258,7 +258,7 @@ static inline void generate_point_template(std::vector<int8_t>& out, int size, u
     }
 }
 
-static inline void build_carrier_template(std::vector<int8_t>& out, int size, const std::vector<int8_t>& fine, const std::vector<int8_t>& medium, const std::vector<int8_t>& coarse, const std::vector<int8_t>& point, int wPoint, int wFine, int wMedium, int wCoarse, int targetStd) {
+inline void build_carrier_template(std::vector<int8_t>& out, int size, const std::vector<int8_t>& fine, const std::vector<int8_t>& medium, const std::vector<int8_t>& coarse, const std::vector<int8_t>& point, int wPoint, int wFine, int wMedium, int wCoarse, int targetStd) {
     const int count = size * size;
     std::vector<float> field(count, 0.0f);
     double mean = 0.0;
@@ -292,7 +292,7 @@ static inline void build_carrier_template(std::vector<int8_t>& out, int size, co
     }
 }
 
-static inline BakedGrainAtlas& baked_grain_atlas() {
+inline BakedGrainAtlas& baked_grain_atlas() {
     static BakedGrainAtlas t;
     if (!t.ready) {
         const int size = 256;
@@ -328,12 +328,12 @@ static inline BakedGrainAtlas& baked_grain_atlas() {
     return t;
 }
 
-static inline int sample_atlas_template(const std::vector<int8_t>& tpl, int sizeMask, int x, int y) {
+inline int sample_atlas_template(const std::vector<int8_t>& tpl, int sizeMask, int x, int y) {
     return tpl[((y & sizeMask) * (sizeMask + 1)) + (x & sizeMask)];
 }
 
 // --- NEW: Kills the "Cheetah Print" using Hermite Smoothstep ---
-static inline int sample_atlas_bilinear(const std::vector<int8_t>& tpl, int sizeMask, int x_fp8, int y_fp8) {
+inline int sample_atlas_bilinear(const std::vector<int8_t>& tpl, int sizeMask, int x_fp8, int y_fp8) {
     int cx = (x_fp8 >> 8) & sizeMask;
     int cy = (y_fp8 >> 8) & sizeMask;
     int nx = (cx + 1) & sizeMask;
@@ -351,7 +351,7 @@ static inline int sample_atlas_bilinear(const std::vector<int8_t>& tpl, int size
     return interp_x1 + (((interp_x2 - interp_x1) * fy) >> 8);
 }
 
-static inline int grain_amount_mask(int y) {
+inline int grain_amount_mask(int y) {
     if (y < 16 || y > 236) return 0;
     if (y < 40) return ((y - 16) * 52) >> 3;
     if (y < 96) return 156 + ((y - 40) * 88) / 56;
@@ -360,7 +360,7 @@ static inline int grain_amount_mask(int y) {
     return 88 - ((y - 196) * 88) / 40;
 }
 
-static inline int apply_density_style_grain_y(int y, int grainTerm) {
+inline int apply_density_style_grain_y(int y, int grainTerm) {
     int out = y;
     if (grainTerm > 0) {
         out -= (grainTerm * (104 + y)) >> 8;
@@ -370,7 +370,7 @@ static inline int apply_density_style_grain_y(int y, int grainTerm) {
     return CLAMP(out);
 }
 
-static inline int grain_profile_index(int densityY) {
+inline int grain_profile_index(int densityY) {
     if (densityY < 56) return 0;
     if (densityY < 104) return 1;
     if (densityY < 156) return 2;
@@ -378,7 +378,7 @@ static inline int grain_profile_index(int densityY) {
     return 4;
 }
 
-static inline int select_profile_full_res(int densityY, int x, int y, uint32_t seed, const BakedGrainAtlas& atlas) {
+inline int select_profile_full_res(int densityY, int x, int y, uint32_t seed, const BakedGrainAtlas& atlas) {
     const int d = CLAMP(densityY + 8);
     const int transitionWidth = 20;
     int lo = grain_profile_index(d);
@@ -407,7 +407,7 @@ static inline int select_profile_full_res(int densityY, int x, int y, uint32_t s
     return threshold < mix ? hi : lo;
 }
 
-static inline const std::vector<int8_t>& atlas_profile_for_index(const BakedGrainAtlas& atlas, int profileIndex) {
+inline const std::vector<int8_t>& atlas_profile_for_index(const BakedGrainAtlas& atlas, int profileIndex) {
     switch (profileIndex) {
         case 0: return atlas.deepDense;
         case 1: return atlas.shadowDense;
@@ -419,7 +419,7 @@ static inline const std::vector<int8_t>& atlas_profile_for_index(const BakedGrai
 
 
 // --- THE TRUE ISO EMULSION MIXER ---
-static inline int grain_profile_sample(int sx, int sy, int flatness, int amp, uint32_t seed, int grainSize) {
+inline int grain_profile_sample(int sx, int sy, int flatness, int amp, uint32_t seed, int grainSize) {
     if (amp <= 0) return 0;
     const BakedGrainAtlas& atlas = baked_grain_atlas();
 
@@ -462,14 +462,14 @@ static inline int grain_profile_sample(int sx, int sy, int flatness, int amp, ui
 // =========================================================
 
 // 1. FAST SHARP NOISE GENERATOR (Microscopic Crystals)
-static inline int halide_crystal(int x, int y, uint32_t seed) {
+inline int halide_crystal(int x, int y, uint32_t seed) {
     uint32_t h = (uint32_t)x * 374761393U + (uint32_t)y * 668265263U + seed;
     h = (h ^ (h >> 13)) * 1274126177U;
     return (int)((h ^ (h >> 16)) & 255) - 128;
 }
 
 // 2. KODAK PORTRA STRUCTURAL CLUSTERING (No spacing, no gaps, no blur)
-static inline int portra_emulsion_sample(int sx, int sy, int grainSize, uint32_t seed) {
+inline int portra_emulsion_sample(int sx, int sy, int grainSize, uint32_t seed) {
     int c1 = halide_crystal(sx, sy, seed);
 
     if (grainSize == 0) {
@@ -509,7 +509,7 @@ static inline int portra_emulsion_sample(int sx, int sy, int grainSize, uint32_t
     return (clump * 220 + c1 * 36) >> 8;
 }
 
-static inline int form_grain_luma_core(int centerY, int leftY, int rightY, int x, int abs_y, int s_grain, int grainSize, int scaleDenom, uint32_t seed) {
+inline int form_grain_luma_core(int centerY, int leftY, int rightY, int x, int abs_y, int s_grain, int grainSize, int scaleDenom, uint32_t seed) {
     if (s_grain <= 0) return centerY;
 
     // Strict 1:1 Pixel Mapping. No stretching = NO CAMO, NO PAINT SPLATTERS.
@@ -605,14 +605,14 @@ static inline int form_grain_luma_core(int centerY, int leftY, int rightY, int x
     return CLAMP(formedY + residual);
 }
 
-static inline int row_luma_rgb_at(const uint8_t* row, int width, int x) {
+inline int row_luma_rgb_at(const uint8_t* row, int width, int x) {
     if (x < 0) x = 0;
     if (x >= width) x = width - 1;
     int i = x * 3;
     return (row[i] * 77 + row[i + 1] * 150 + row[i + 2] * 29) >> 8;
 }
 
-static inline int grain_resolution_scale256(int scaleDenom) {
+inline int grain_resolution_scale256(int scaleDenom) {
     switch (scaleDenom) {
         case 2: return 169;
         case 4: return 85;
@@ -621,13 +621,13 @@ static inline int grain_resolution_scale256(int scaleDenom) {
 }
 
 // Helper for smooth legacy noise
-static inline int hash_coord(int cx, int cy, uint32_t seed) {
+inline int hash_coord(int cx, int cy, uint32_t seed) {
     uint32_t h = ((uint32_t)cx * 1274126177U) ^ ((uint32_t)cy * 2654435761U) ^ seed;
     h = (h ^ (h >> 13)) * 374761393U;
     return (int)(h & 0xFF) - 128;
 }
 
-static inline int legacy_grain_noise(int x, int abs_y, int grainSize, uint32_t& seed) {
+inline int legacy_grain_noise(int x, int abs_y, int grainSize, uint32_t& seed) {
     uint32_t salt_raw = fast_rand(&seed);
     int salt = (int)(salt_raw & 0xFF) - 128;
 
@@ -667,7 +667,7 @@ static inline int legacy_grain_noise(int x, int abs_y, int grainSize, uint32_t& 
 // ==========================================
 // OPTICAL BLOOM & TRUE HALATION ENGINE V5 (PHYSICALLY BASED)
 // ==========================================
-static inline void apply_bloom_halation(
+inline void apply_bloom_halation(
     unsigned char** rows, uint8_t* out_row, int width, int abs_y, bool is_yuv, int bloom, int halation, uint32_t seed,
     int* work_0, int* work_1, int* work_2, int* work_h, int* h_line, int scaleDenom, bool is_mono = false)
 {
@@ -837,7 +837,7 @@ static inline void apply_bloom_halation(
 }
 
 // High-fidelity sampler for 1024x1024 textures to prevent aliasing on Proxy/Half
-static inline void sample_tex_bilinear_1024(const uint8_t* tex, int x_fp8, int y_fp8, int* outRGB) {
+inline void sample_tex_bilinear_1024(const uint8_t* tex, int x_fp8, int y_fp8, int* outRGB) {
     int x0 = (x_fp8 >> 8) & 1023;
     int y0 = (y_fp8 >> 8) & 1023;
     int x1 = (x0 + 1) & 1023;
@@ -860,7 +860,7 @@ static inline void sample_tex_bilinear_1024(const uint8_t* tex, int x_fp8, int y
 static uint8_t overlayBlendLut[65536];
 static bool overlayBlendLutReady = false;
 
-static inline void ensure_overlay_blend_lut() {
+inline void ensure_overlay_blend_lut() {
     if (overlayBlendLutReady) return;
     for (int base = 0; base < 256; base++) {
         for (int blend = 0; blend < 256; blend++) {
@@ -870,12 +870,12 @@ static inline void ensure_overlay_blend_lut() {
     overlayBlendLutReady = true;
 }
 
-static inline int blend_overlay_cached(int base, int blend) {
+inline int blend_overlay_cached(int base, int blend) {
     return overlayBlendLut[(CLAMP(base) << 8) | CLAMP(blend)];
 }
 
 // High-fidelity sampler for 512x512 textures with built-in XOR mirroring.
-static inline void sample_tex_bilinear_512_xor(const uint8_t* tex, int x_fp8, int y_fp8, int* outRGB) {
+inline void sample_tex_bilinear_512_xor(const uint8_t* tex, int x_fp8, int y_fp8, int* outRGB) {
     int px0 = x_fp8 >> 8;
     int py0 = y_fp8 >> 8;
     int px1 = px0 + 1;
@@ -911,7 +911,7 @@ static inline void sample_tex_bilinear_512_xor(const uint8_t* tex, int x_fp8, in
     }
 }
 
-static inline void sample_tex_nearest_1024(const uint8_t* tex, int px, int py, int* outRGB) {
+inline void sample_tex_nearest_1024(const uint8_t* tex, int px, int py, int* outRGB) {
     int tx = px & 1023;
     int ty = py & 1023;
     int tex_idx = (ty * 1024 + tx) * 3;
@@ -920,7 +920,7 @@ static inline void sample_tex_nearest_1024(const uint8_t* tex, int px, int py, i
     outRGB[2] = tex[tex_idx + 2];
 }
 
-static inline void sample_tex_nearest_1024_transform(const uint8_t* tex, int px, int py, int transform, int* outRGB) {
+inline void sample_tex_nearest_1024_transform(const uint8_t* tex, int px, int py, int transform, int* outRGB) {
     int tx = px & 1023;
     int ty = py & 1023;
     if (transform & 1) tx = 1023 - tx;
@@ -931,7 +931,7 @@ static inline void sample_tex_nearest_1024_transform(const uint8_t* tex, int px,
     outRGB[2] = tex[tex_idx + 2];
 }
 
-static inline void sample_tex_nearest_512_xor(const uint8_t* tex, int px, int py, int* outRGB) {
+inline void sample_tex_nearest_512_xor(const uint8_t* tex, int px, int py, int* outRGB) {
     int tx = px & 511;
     int ty = py & 511;
     if (((px >> 9) ^ (py >> 9)) & 1) tx = 511 - tx;
@@ -942,7 +942,7 @@ static inline void sample_tex_nearest_512_xor(const uint8_t* tex, int px, int py
     outRGB[2] = tex[tex_idx + 2];
 }
 
-static inline void sample_tex_nearest_512_xor_transform(const uint8_t* tex, int px, int py, int transform, int* outRGB) {
+inline void sample_tex_nearest_512_xor_transform(const uint8_t* tex, int px, int py, int transform, int* outRGB) {
     int px2 = px & 2047;
     int py2 = py & 2047;
     if (transform & 1) px2 = 2047 - px2;
@@ -958,13 +958,13 @@ static inline void sample_tex_nearest_512_xor_transform(const uint8_t* tex, int 
     outRGB[2] = tex[tex_idx + 2];
 }
 
-static inline const uint8_t* sample_tex_ptr_nearest_1024(const uint8_t* tex, int px, int py) {
+inline const uint8_t* sample_tex_ptr_nearest_1024(const uint8_t* tex, int px, int py) {
     int tx = px & 1023;
     int ty = py & 1023;
     return tex + ((ty * 1024 + tx) * 3);
 }
 
-static inline const uint8_t* sample_tex_ptr_nearest_1024_transform(const uint8_t* tex, int px, int py, int transform) {
+inline const uint8_t* sample_tex_ptr_nearest_1024_transform(const uint8_t* tex, int px, int py, int transform) {
     int tx = px & 1023;
     int ty = py & 1023;
     if (transform & 1) tx = 1023 - tx;
@@ -972,7 +972,7 @@ static inline const uint8_t* sample_tex_ptr_nearest_1024_transform(const uint8_t
     return tex + ((ty * 1024 + tx) * 3);
 }
 
-static inline const uint8_t* sample_tex_ptr_nearest_512_xor(const uint8_t* tex, int px, int py) {
+inline const uint8_t* sample_tex_ptr_nearest_512_xor(const uint8_t* tex, int px, int py) {
     int tx = px & 511;
     int ty = py & 511;
     if (((px >> 9) ^ (py >> 9)) & 1) tx = 511 - tx;
@@ -980,7 +980,7 @@ static inline const uint8_t* sample_tex_ptr_nearest_512_xor(const uint8_t* tex, 
     return tex + ((ty * 512 + tx) * 3);
 }
 
-static inline const uint8_t* sample_tex_ptr_nearest_512_xor_transform(const uint8_t* tex, int px, int py, int transform) {
+inline const uint8_t* sample_tex_ptr_nearest_512_xor_transform(const uint8_t* tex, int px, int py, int transform) {
     int px2 = px & 2047;
     int py2 = py & 2047;
     if (transform & 1) px2 = 2047 - px2;
@@ -996,7 +996,7 @@ static inline const uint8_t* sample_tex_ptr_nearest_512_xor_transform(const uint
 // ==========================================
 // PATH A: RGB + LUT + ANALOG PHYSICS
 // ==========================================
-static inline void process_row_rgb(
+inline void process_row_rgb(
     uint8_t* row, int width, int abs_y, long long cx, long long cy_center, long long vig_coef,
     int shadowToe, int rollOff, int colorChrome, int chromeBlue,
     int subtractiveSat, int halation, int vignette,
@@ -1216,7 +1216,7 @@ static inline void process_row_rgb(
 // ==========================================
 // PATH B: THE YUV EXPRESSWAY
 // ==========================================
-static inline void process_row_yuv(
+inline void process_row_yuv(
     uint8_t* row, int width, int abs_y, long long cx, long long cy_center, long long vig_coef,
     int shadowToe, int rollOff, int colorChrome, int chromeBlue,
     int subtractiveSat, int halation, int vignette,
@@ -1379,7 +1379,7 @@ struct YuvTextureFastLut {
     uint16_t ratio256[256];
 };
 
-static inline void build_yuv_texture_fast_lut(
+inline void build_yuv_texture_fast_lut(
     YuvTextureFastLut& out,
     int shadowToe,
     int rollOff,
@@ -1406,7 +1406,7 @@ static inline void build_yuv_texture_fast_lut(
     }
 }
 
-static inline void process_row_yuv_texture_fast(
+inline void process_row_yuv_texture_fast(
     uint8_t* row, int width, int abs_y,
     int grain, int scaleDenom,
     const YuvTextureFastLut& fastLut,
