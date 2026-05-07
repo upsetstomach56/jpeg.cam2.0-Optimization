@@ -1250,15 +1250,14 @@ static inline void process_row_rgb(
 
             if (bloom > 0 && b_bleed > 0) {
                 int b_mix = 0;
-                if (bloom == 5 || bloom == 6) b_mix = 75;  // 45 * 1.67
-                else if (bloom == 1 || bloom == 2) b_mix = 150; // 90 * 1.67
-                else if (bloom == 3 || bloom == 4) b_mix = 255; // 160 * 1.67
+                if (bloom == 5 || bloom == 6) b_mix = 45;
+                else if (bloom == 1 || bloom == 2) b_mix = 90;
+                else if (bloom == 3 || bloom == 4) b_mix = 160;
                 int add = (b_bleed * b_mix) / 256;
                 outR += add; outG += add; outB += add;
             }
 
-            // Halation mix matched to old engine (120->200, 200->300)
-            int h_mix = (halation == 1) ? 200 : 334;
+            int h_mix = (halation == 1) ? 120 : 200;
             int h_eff = (halation_y * h_mix) / 256;
             h_eff = (h_eff * (255 - origY)) / 256;
 
@@ -1470,16 +1469,16 @@ static inline void process_row_yuv(
 
             if (bloom > 0 && b_bleed > 0) {
                 int b_mix = 0;
-                if (bloom == 5 || bloom == 6) b_mix = 75;
-                else if (bloom == 1 || bloom == 2) b_mix = 150;
-                else if (bloom == 3 || bloom == 4) b_mix = 255;
+                if (bloom == 5 || bloom == 6) b_mix = 45;
+                else if (bloom == 1 || bloom == 2) b_mix = 90;
+                else if (bloom == 3 || bloom == 4) b_mix = 160;
                 int add_y = (b_bleed * b_mix) / 256;
                 outY += add_y;
                 cb = cb + ((-cb) * add_y) / 256; // Pulls saturation towards white (0 chroma)
                 cr = cr + ((-cr) * add_y) / 256;
             }
 
-            int h_mix = (halation == 1) ? 200 : 334;
+            int h_mix = (halation == 1) ? 120 : 200;
             int h_eff = (halation_y * h_mix) / 256;
             h_eff = (h_eff * (255 - oldY)) / 256;
 
