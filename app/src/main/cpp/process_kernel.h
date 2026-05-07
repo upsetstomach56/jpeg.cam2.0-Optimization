@@ -1243,14 +1243,17 @@ static inline void process_row_rgb(
             int h11 = halation_map[y1 * map_w + x1];
             int h_top = h00 + (((h10 - h00) * fx) >> 8);
             int h_bot = h01 + (((h11 - h01) * fx) >> 8);
-            int halation_y = h_top + (((h_bot - h_top) * fy) >> 8);
+            // Restore exact 1.67x inflation of blur energy from old sliding window's division anomaly
+            int scaled_blur = (blur_y * 167) / 100;
+            int b_bleed = scaled_blur - origY;
+            if (b_bleed < 0) b_bleed = 0;
 
-            if (bloom > 0 && blur_y > 0) {
+            if (bloom > 0 && b_bleed > 0) {
                 int b_mix = 0;
                 if (bloom == 5 || bloom == 6) b_mix = 45;
                 else if (bloom == 1 || bloom == 2) b_mix = 90;
                 else if (bloom == 3 || bloom == 4) b_mix = 160;
-                int add = (blur_y * b_mix) / 256;
+                int add = (b_bleed * b_mix) / 256;
                 outR += add; outG += add; outB += add;
             }
 
@@ -1459,14 +1462,17 @@ static inline void process_row_yuv(
             int h11 = h_row1[x1];
             int h_top = h00 + (((h10 - h00) * fx) >> 8);
             int h_bot = h01 + (((h11 - h01) * fx) >> 8);
-            int halation_y = h_top + (((h_bot - h_top) * map_fy) >> 8);
+            // Restore exact 1.67x inflation of blur energy from old sliding window's division anomaly
+            int scaled_blur = (blur_y * 167) / 100;
+            int b_bleed = scaled_blur - oldY;
+            if (b_bleed < 0) b_bleed = 0;
 
-            if (bloom > 0 && blur_y > 0) {
+            if (bloom > 0 && b_bleed > 0) {
                 int b_mix = 0;
                 if (bloom == 5 || bloom == 6) b_mix = 45;
                 else if (bloom == 1 || bloom == 2) b_mix = 90;
                 else if (bloom == 3 || bloom == 4) b_mix = 160;
-                int add_y = (blur_y * b_mix) / 256;
+                int add_y = (b_bleed * b_mix) / 256;
                 outY += add_y;
                 cb = cb + ((-cb) * add_y) / 256; // Pulls saturation towards white (0 chroma)
                 cr = cr + ((-cr) * add_y) / 256;

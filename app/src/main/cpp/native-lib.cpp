@@ -357,15 +357,11 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
                     int lum = (row[i] * 77 + row[i+1] * 150 + row[i+2] * 29) >> 8;
                     
                     if (bloom > 0) {
-                        int e = 0;
-                        // Cinematic Bloom Threshold: Only extract highlights to preserve midtone textures and deep shadows.
-                        if (lum > 140) {
-                            int diff = lum - 140;
-                            if (bloom % 2 == 0) { // Full bloom (smooth linear ramp into highlights)
-                                e = diff * 2;
-                            } else { // Local bloom (exponential curve, only the brightest peaks bloom)
-                                e = (diff * diff) >> 5;
-                            }
+                        int e;
+                        if (bloom % 2 == 0) { // Full bloom (evens: 6, 2, 4)
+                            e = (lum < 128) ? lum : lum + (((lum - 128) * (lum - 128)) >> 6);
+                        } else { // Local bloom (odds: 5, 1, 3)
+                            e = (lum < 128) ? ((lum * lum) >> 7) : lum + (((lum - 128) * (lum - 128)) >> 6);
                         }
                         bloom_map[y * map_w + x] = (uint8_t)CLAMP(e);
                     }
@@ -377,15 +373,11 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
             }
             
             int b_alpha = 0;
-            // Radius now steps up dynamically with filter strength!
-            // Local Bloom (Tight glow, crushed shadows)
-            if (bloom == 5) b_alpha = 140;      // 1/8 strength
-            else if (bloom == 1) b_alpha = 160; // 1/4 strength
-            else if (bloom == 3) b_alpha = 180; // 1/2 strength
-            // Full Bloom (Wide mist, linear shadows)
-            else if (bloom == 6) b_alpha = 180; // 1/8 strength
-            else if (bloom == 2) b_alpha = 200; // 1/4 strength
-            else if (bloom == 4) b_alpha = 220; // 1/2 strength
+            // Radius exactly matched to the original sliding-window engine's physical spread!
+            // Local Bloom (Original was 0.11% spread on full image -> matches alpha 107 on downsampled map)
+            if (bloom == 5 || bloom == 1 || bloom == 3) b_alpha = 107; 
+            // Full Bloom (Original was 0.5% spread on full image -> matches alpha 212 on downsampled map)
+            else if (bloom == 6 || bloom == 2 || bloom == 4) b_alpha = 212;
 
             int h_alpha = (halation == 1) ? 150 : 210;
             
