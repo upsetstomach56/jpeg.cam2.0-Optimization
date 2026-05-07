@@ -667,6 +667,48 @@ static inline int legacy_grain_noise(int x, int abs_y, int grainSize, uint32_t& 
 // ==========================================
 // OPTICAL BLOOM & TRUE HALATION ENGINE V5 (PHYSICALLY BASED)
 // ==========================================
+// Fast 2D IIR Blur for downsampled maps
+static inline void fast_blur_2d_iir(uint8_t* map, int w, int h, int alpha) {
+    if (!map || w <= 0 || h <= 0 || alpha <= 0) return;
+    int inv_alpha = 256 - alpha;
+    uint8_t* temp = (uint8_t*)malloc(w * h);
+    if (!temp) return;
+    
+    // Horizontal
+    for (int y = 0; y < h; y++) {
+        int row_idx = y * w;
+        int val = map[row_idx];
+        for (int x = 1; x < w; x++) {
+            val = (val * alpha + map[row_idx + x] * inv_alpha + 128) / 256;
+            map[row_idx + x] = val;
+        }
+        val = map[row_idx + w - 1];
+        for (int x = w - 2; x >= 0; x--) {
+            val = (val * alpha + map[row_idx + x] * inv_alpha + 128) / 256;
+            map[row_idx + x] = val;
+        }
+    }
+    
+    // Vertical
+    for (int x = 0; x < w; x++) {
+        int val = map[x];
+        temp[x] = val;
+        for (int y = 1; y < h; y++) {
+            int idx = y * w + x;
+            val = (val * alpha + map[idx] * inv_alpha + 128) / 256;
+            temp[idx] = val;
+        }
+        val = temp[(h - 1) * w + x];
+        map[(h - 1) * w + x] = val;
+        for (int y = h - 2; y >= 0; y--) {
+            int idx = y * w + x;
+            val = (val * alpha + temp[idx] * inv_alpha + 128) / 256;
+            map[idx] = val;
+        }
+    }
+    free(temp);
+}
+
 static inline void apply_bloom_halation(
     unsigned char** rows, uint8_t* out_row, int width, int abs_y, bool is_yuv, int bloom, int halation, uint32_t seed,
     int* work_0, int* work_1, int* work_2, int* work_h, int* h_line, int scaleDenom, bool is_mono = false)
@@ -1006,7 +1048,8 @@ static inline void process_row_rgb(
     const uint8_t* externalGrainTexture = NULL,
     bool is_1024_grain = false,
     int grainTransform = 0,
-    bool is_mono = false)
+    bool is_mono = false,
+    uint8_t* bloom_map = NULL, uint8_t* halation_map = NULL, int map_w = 0, int map_h = 0, int bloom = 0)
 {
     int s_roll   = rollOff * 20;
     int s_chrome = colorChrome * 40;
@@ -1070,6 +1113,8 @@ static inline void process_row_rgb(
                 b = CLAMP((b * scale_b) >> 8);
             }
         }
+
+        int origY = currRawY; // Original Luma before LUT for bloom bleed calculation
 
         // --- LUT CALCS ---
         int fX = map[r], fY = map[g], fZ = map[b];
@@ -1138,12 +1183,6 @@ static inline void process_row_rgb(
             outR = (outR * r256) >> 8; outG = (outG * r256) >> 8; outB = (outB * r256) >> 8;
         }
 
-        if (halation > 0 && targetY > 245) {
-            int push = (targetY - 245) * (halation == 1 ? 3 : 6);
-            outR += push;
-            if (!is_mono) { outG -= (push >> 2); outB -= (push >> 1); }
-        }
-
         if (vignette > 0) {
             int v_m = 256 - (int)((d_sq * vig_coef) >> 24);
             if (v_m < 0) v_m = 0;
@@ -1151,6 +1190,66 @@ static inline void process_row_rgb(
 
             d_sq += d_sq_step;
             d_sq_step += 2;
+        }
+
+        // --- DOWNSAMPLED BLOOM & HALATION APPLICATION ---
+        if (bloom_map && halation_map && map_w > 0 && map_h > 0) {
+            int map_x_fp8 = x * scaleDenom * 32; // * 256 / 8 = 32
+            int map_y_fp8 = abs_y * scaleDenom * 32;
+
+            int x0 = map_x_fp8 >> 8;
+            int y0 = map_y_fp8 >> 8;
+            int x1 = x0 + 1;
+            int y1 = y0 + 1;
+            if (x0 >= map_w) x0 = map_w - 1;
+            if (x1 >= map_w) x1 = map_w - 1;
+            if (y0 >= map_h) y0 = map_h - 1;
+            if (y1 >= map_h) y1 = map_h - 1;
+
+            int fx = map_x_fp8 & 255;
+            int fy = map_y_fp8 & 255;
+
+            // Sample bloom
+            int b00 = bloom_map[y0 * map_w + x0];
+            int b10 = bloom_map[y0 * map_w + x1];
+            int b01 = bloom_map[y1 * map_w + x0];
+            int b11 = bloom_map[y1 * map_w + x1];
+            int b_top = b00 + (((b10 - b00) * fx) >> 8);
+            int b_bot = b01 + (((b11 - b01) * fx) >> 8);
+            int blur_y = b_top + (((b_bot - b_top) * fy) >> 8);
+
+            // Sample halation
+            int h00 = halation_map[y0 * map_w + x0];
+            int h10 = halation_map[y0 * map_w + x1];
+            int h01 = halation_map[y1 * map_w + x0];
+            int h11 = halation_map[y1 * map_w + x1];
+            int h_top = h00 + (((h10 - h00) * fx) >> 8);
+            int h_bot = h01 + (((h11 - h01) * fx) >> 8);
+            int halation_y = h_top + (((h_bot - h_top) * fy) >> 8);
+
+            int b_bleed = blur_y - origY;
+            if (b_bleed < 0) b_bleed = 0;
+
+            if (bloom > 0 && b_bleed > 0) {
+                int b_mix = 0;
+                if (bloom == 5 || bloom == 6) b_mix = 45;
+                else if (bloom == 1 || bloom == 2) b_mix = 90;
+                else if (bloom == 3 || bloom == 4) b_mix = 160;
+                int add = (b_bleed * b_mix) / 256;
+                outR += add; outG += add; outB += add;
+            }
+
+            int h_mix = (halation == 1) ? 120 : 200;
+            int h_eff = (halation_y * h_mix) / 256;
+            h_eff = (h_eff * (255 - origY)) / 256;
+
+            if (halation > 0 && h_eff > 0) {
+                if (!is_mono) {
+                    outR += h_eff; outG += h_eff / 5; outB -= h_eff / 5;
+                } else {
+                    outR += h_eff / 3; outG += h_eff / 3; outB += h_eff / 3;
+                }
+            }
         }
 
         // NEW: Engine 2 (Texture Overlay)
@@ -1225,7 +1324,8 @@ static inline void process_row_yuv(
     const uint8_t* externalGrainTexture = NULL,
     bool is_1024_grain = false,
     int grainTransform = 0,
-    bool is_mono = false)
+    bool is_mono = false,
+    uint8_t* bloom_map = NULL, uint8_t* halation_map = NULL, int map_w = 0, int map_h = 0, int bloom = 0)
 {
     int s_chrome = colorChrome * 40;
     int s_blue   = chromeBlue * 40;
@@ -1294,15 +1394,71 @@ static inline void process_row_yuv(
             }
         }
 
-        if (outY < 8) outY = 8;
-        if (halation > 0 && outY > 245) {
-            int push = (outY - 245) * (halation == 1 ? 3 : 6);
-            if (!is_mono) { cr += push; cb -= (push >> 1); }
-        }
-
         if (oldY != outY) {
             int r256 = (outY * 256) / (oldY == 0 ? 1 : oldY);
             cb = (cb * r256) >> 8; cr = (cr * r256) >> 8;
+        }
+
+        // --- DOWNSAMPLED BLOOM & HALATION APPLICATION (YUV Space) ---
+        if (bloom_map && halation_map && map_w > 0 && map_h > 0) {
+            int map_x_fp8 = x * scaleDenom * 32; // * 256 / 8 = 32
+            int map_y_fp8 = abs_y * scaleDenom * 32;
+
+            int x0 = map_x_fp8 >> 8;
+            int y0 = map_y_fp8 >> 8;
+            int x1 = x0 + 1;
+            int y1 = y0 + 1;
+            if (x0 >= map_w) x0 = map_w - 1;
+            if (x1 >= map_w) x1 = map_w - 1;
+            if (y0 >= map_h) y0 = map_h - 1;
+            if (y1 >= map_h) y1 = map_h - 1;
+
+            int fx = map_x_fp8 & 255;
+            int fy = map_y_fp8 & 255;
+
+            // Sample bloom
+            int b00 = bloom_map[y0 * map_w + x0];
+            int b10 = bloom_map[y0 * map_w + x1];
+            int b01 = bloom_map[y1 * map_w + x0];
+            int b11 = bloom_map[y1 * map_w + x1];
+            int b_top = b00 + (((b10 - b00) * fx) >> 8);
+            int b_bot = b01 + (((b11 - b01) * fx) >> 8);
+            int blur_y = b_top + (((b_bot - b_top) * fy) >> 8);
+
+            // Sample halation
+            int h00 = halation_map[y0 * map_w + x0];
+            int h10 = halation_map[y0 * map_w + x1];
+            int h01 = halation_map[y1 * map_w + x0];
+            int h11 = halation_map[y1 * map_w + x1];
+            int h_top = h00 + (((h10 - h00) * fx) >> 8);
+            int h_bot = h01 + (((h11 - h01) * fx) >> 8);
+            int halation_y = h_top + (((h_bot - h_top) * fy) >> 8);
+
+            int b_bleed = blur_y - oldY;
+            if (b_bleed < 0) b_bleed = 0;
+
+            if (bloom > 0 && b_bleed > 0) {
+                int b_mix = 0;
+                if (bloom == 5 || bloom == 6) b_mix = 45;
+                else if (bloom == 1 || bloom == 2) b_mix = 90;
+                else if (bloom == 3 || bloom == 4) b_mix = 160;
+                int add_y = (b_bleed * b_mix) / 256;
+                outY += add_y;
+                cb = cb + ((-cb) * add_y) / 256; // Pulls saturation towards white (0 chroma)
+                cr = cr + ((-cr) * add_y) / 256;
+            }
+
+            int h_mix = (halation == 1) ? 120 : 200;
+            int h_eff = (halation_y * h_mix) / 256;
+            h_eff = (h_eff * (255 - oldY)) / 256;
+
+            if (halation > 0 && h_eff > 0) {
+                outY += h_eff / 3;
+                if (!is_mono) {
+                    cr += h_eff;
+                    cb -= h_eff / 2;
+                }
+            }
         }
 
         // NEW: Engine 2 (Texture Overlay)

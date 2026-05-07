@@ -82,6 +82,12 @@ struct RowKernelTask {
     int lutSize2;
 
     const uint8_t* rollLut;
+
+    uint8_t* bloom_map;
+    uint8_t* halation_map;
+    int map_w;
+    int map_h;
+    int bloom;
 };
 
 static void dispatch_row_kernel(RowKernelTask* task) {
@@ -98,7 +104,7 @@ static void dispatch_row_kernel(RowKernelTask* task) {
             if (task->applyCrop && (ay < task->sk || ay >= task->sk + task->fh)) continue;
             uint8_t* row_ptr = task->base + row * task->rowStride;
             uint32_t seed = task->baseSeed + (uint32_t)(ay * 987654321u); // stable seed per row
-            process_row_rgb(row_ptr, task->width, ay, task->cx, task->cy_center, task->vig_coef, task->shadowToe, task->rollOff, task->colorChrome, task->chromeBlue, task->subtractiveSat, task->halation, task->vignette, task->grain, task->grainSize, task->scaleDenom, task->advancedGrainExperimental, seed, task->opac_mapped, task->map, task->nativeLut, task->nativeLutSize, task->lutMax, task->lutSize2, task->externalTex, task->is1024Grain, task->grainTransform, task->is_mono);
+            process_row_rgb(row_ptr, task->width, ay, task->cx, task->cy_center, task->vig_coef, task->shadowToe, task->rollOff, task->colorChrome, task->chromeBlue, task->subtractiveSat, task->halation, task->vignette, task->grain, task->grainSize, task->scaleDenom, task->advancedGrainExperimental, seed, task->opac_mapped, task->map, task->nativeLut, task->nativeLutSize, task->lutMax, task->lutSize2, task->externalTex, task->is1024Grain, task->grainTransform, task->is_mono, task->bloom_map, task->halation_map, task->map_w, task->map_h, task->bloom);
         }
     } else if (task->kind == KERNEL_YUV) {
         for (int row = task->rowStart; row < task->rowEnd; row++) {
@@ -106,7 +112,7 @@ static void dispatch_row_kernel(RowKernelTask* task) {
             if (task->applyCrop && (ay < task->sk || ay >= task->sk + task->fh)) continue;
             uint8_t* row_ptr = task->base + row * task->rowStride;
             uint32_t seed = task->baseSeed + (uint32_t)(ay * 987654321u); // stable seed per row
-            process_row_yuv(row_ptr, task->width, ay, task->cx, task->cy_center, task->vig_coef, task->shadowToe, task->rollOff, task->colorChrome, task->chromeBlue, task->subtractiveSat, task->halation, task->vignette, task->grain, task->grainSize, task->scaleDenom, task->advancedGrainExperimental, seed, task->rollLut, task->externalTex, task->is1024Grain, task->grainTransform, task->is_mono);
+            process_row_yuv(row_ptr, task->width, ay, task->cx, task->cy_center, task->vig_coef, task->shadowToe, task->rollOff, task->colorChrome, task->chromeBlue, task->subtractiveSat, task->halation, task->vignette, task->grain, task->grainSize, task->scaleDenom, task->advancedGrainExperimental, seed, task->rollLut, task->externalTex, task->is1024Grain, task->grainTransform, task->is_mono, task->bloom_map, task->halation_map, task->map_w, task->map_h, task->bloom);
         }
     } else if (task->kind == KERNEL_GRAIN_ONLY_RGB) {
         for (int row = task->rowStart; row < task->rowEnd; row++) {
@@ -315,6 +321,81 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
     pthread_mutex_unlock(&g_lut_mutex);
 
     bool use_rgb = (localLutSize > 0 && opacity > 0);
+
+    // --- PASS 1: DOWNSAMPLED BLOOM & HALATION MAPS ---
+    uint8_t* bloom_map = NULL;
+    uint8_t* halation_map = NULL;
+    int map_w = 0, map_h = 0;
+
+    if (bloom > 0 || halation > 0) {
+        jpeg_read_header(&cd, TRUE);
+        cd.scale_num = 1;
+        cd.scale_denom = 8;
+        cd.out_color_space = JCS_RGB; 
+        cd.dct_method = JDCT_IFAST;
+        cd.do_fancy_upsampling = FALSE;
+        jpeg_start_decompress(&cd);
+        
+        map_w = cd.output_width;
+        map_h = cd.output_height;
+        
+        bloom_map = (uint8_t*)malloc(map_w * map_h);
+        halation_map = (uint8_t*)malloc(map_w * map_h);
+        
+        if (bloom_map && halation_map) {
+            memset(bloom_map, 0, map_w * map_h);
+            memset(halation_map, 0, map_w * map_h);
+            
+            JSAMPARRAY row_ptr = cd.mem->alloc_sarray((j_common_ptr)&cd, JPOOL_IMAGE, cd.output_width * cd.output_components, 1);
+            
+            int y = 0;
+            while (cd.output_scanline < cd.output_height) {
+                jpeg_read_scanlines(&cd, row_ptr, 1);
+                uint8_t* row = row_ptr[0];
+                for (int x = 0; x < map_w; x++) {
+                    int i = x * 3;
+                    int lum = (row[i] * 77 + row[i+1] * 150 + row[i+2] * 29) >> 8;
+                    
+                    if (bloom > 0) {
+                        int e;
+                        if (bloom % 2 == 0) { // Full bloom (evens: 6, 2, 4)
+                            e = (lum < 128) ? lum : lum + (((lum - 128) * (lum - 128)) >> 6);
+                        } else { // Local bloom (odds: 5, 1, 3)
+                            e = (lum < 128) ? ((lum * lum) >> 7) : lum + (((lum - 128) * (lum - 128)) >> 6);
+                        }
+                        bloom_map[y * map_w + x] = (uint8_t)CLAMP(e);
+                    }
+                    if (halation > 0 && lum > 210) {
+                        halation_map[y * map_w + x] = (uint8_t)CLAMP((lum - 210) * 5);
+                    }
+                }
+                y++;
+            }
+            
+            int b_alpha = 0;
+            if (bloom == 5 || bloom == 1 || bloom == 3) b_alpha = 140; // Local
+            if (bloom == 6 || bloom == 2 || bloom == 4) b_alpha = 200; // Full
+            int h_alpha = (halation == 1) ? 100 : 160;
+            
+            if (bloom > 0) fast_blur_2d_iir(bloom_map, map_w, map_h, b_alpha);
+            if (halation > 0) fast_blur_2d_iir(halation_map, map_w, map_h, h_alpha);
+        } else {
+            if (bloom_map) free(bloom_map);
+            if (halation_map) free(halation_map);
+            bloom_map = NULL; halation_map = NULL;
+        }
+        
+        jpeg_finish_decompress(&cd);
+        jpeg_destroy_decompress(&cd);
+        fseek(inf, 0, SEEK_SET);
+        
+        // Re-init for Pass 2
+        jpeg_create_decompress(&cd);
+        jpeg_stdio_src(&cd, inf);
+        for (int i = 0; i < 16; i++) jpeg_save_markers(&cd, JPEG_APP0 + i, 0xFFFF);
+        jpeg_save_markers(&cd, JPEG_COM, 0xFFFF);
+    }
+    // --- END PASS 1 ---
     jpeg_read_header(&cd, TRUE);
     cd.scale_num = 1;
     cd.scale_denom = scaleDenom;
@@ -381,22 +462,7 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
     if (advancedGrainExperimental == 2 && externalTex != NULL && grain > 0) {
         ensure_overlay_blend_lut();
     }
-    int ws_s = cd.output_width * sizeof(int);
-    int* work_0 = NULL; int* work_1 = NULL; int* work_2 = NULL; int* work_h = NULL; int* h_line = NULL;
-    if (bloom > 0 || halation > 0) {
-        work_0 = (int*)malloc(ws_s); work_1 = (int*)malloc(ws_s); work_2 = (int*)malloc(ws_s);
-        work_h = (int*)malloc(ws_s); h_line = (int*)malloc(ws_s);
-        if (!work_0 || !work_1 || !work_2 || !work_h || !h_line) {
-            free(rb); free(ob);
-            if(work_0) free(work_0); if(work_1) free(work_1); if(work_2) free(work_2);
-            if(work_h) free(work_h); if(h_line) free(h_line);
-            jpeg_finish_compress(&cc); jpeg_destroy_compress(&cc);
-            jpeg_finish_decompress(&cd); jpeg_destroy_decompress(&cd);
-            fclose(inf); fclose(ouf);
-            env->ReleaseStringUTFChars(inPath,ifn); env->ReleaseStringUTFChars(outPath,ofn);
-            return JNI_FALSE;
-        }
-    }
+
 
     int opac_m = (opacity * 256) / 100;
     long long cx = cd.output_width / 2;
@@ -428,7 +494,8 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
     // Bloom path is only needed when bloom/halation are active (cross-row sliding window).
     // Note: Engine 1 (crystal grain, advancedGrainExperimental==1) is legacy dead code —
     // Engine 2 (PNG texture) is always selected when grain is active.
-    bool row_stream_mode = (bloom <= 0 && halation <= 0);
+    // UPDATE: We now ALWAYS use the fast row_stream_mode thanks to the Downsampled Bloom maps!
+    bool row_stream_mode = true;
     if (row_stream_mode) {
         while (cd.output_scanline < cd.output_height) {
             int ay = cd.output_scanline;
@@ -468,6 +535,12 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
                 tasks[t].grainTransform = grainTransform;
                 tasks[t].baseSeed = grain_seed;
                 tasks[t].is_mono = (bool)isMono;
+
+                tasks[t].bloom_map = bloom_map;
+                tasks[t].halation_map = halation_map;
+                tasks[t].map_w = map_w;
+                tasks[t].map_h = map_h;
+                tasks[t].bloom = bloom;
 
                 if (use_rgb) {
                     tasks[t].kind = KERNEL_RGB;
@@ -528,203 +601,13 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
             }
             t_encode += (get_time_ms() - t_e_start);
         }
-    } else {
-        // =====================================================================
-        // BLOOM PATH — Film-correct order:
-        // 1. Kernel (LUT + tone + color + vignette) on r[] copy — NO post-grain
-        // 2. Bloom/Halation spatial effect — single-threaded (cross-row deps)
-        // 3. Grain on orw[] — LAST (silver halide crystals develop on surface)
-        // =====================================================================
 
-        // Allocate a processed copy of the window so we don't corrupt r[] lookback rows
-        unsigned char* pb = (unsigned char*)memalign(16, BUF * rs);
-        unsigned char* pr_rows[256];
-        if (pb) {
-            for (int i = 0; i < BUF; i++) pr_rows[i] = pb + (i * rs);
-        }
-
-        long long t_d_start = get_time_ms();
-        if(cd.output_height>0){ rpx[0]=r[10]; jpeg_read_scanlines(&cd,rpx,1); for(int i=0; i<10; i++) memcpy(r[i],r[10],rs); }
-        for(int i=11; i<BUF; i++){ if(cd.output_scanline < cd.output_height){ rpx[0]=r[i]; jpeg_read_scanlines(&cd,rpx,1); } else memcpy(r[i],r[i-1],rs); }
-        t_decode += (get_time_ms() - t_d_start);
-
-        // Determine if we need post-bloom grain (Engine 0 or 2 only; Engine 1 is pre-LUT)
-        bool needs_post_grain = (grain > 0 && advancedGrainExperimental != 1);
-
-        int pr = 0; while(pr < (int)cd.output_height){
-            long long t_k_start = get_time_ms();
-            int rtp = std::min(CHK, (int)cd.output_height-pr);
-            int window_rows = rtp + 20;  // all rows the bloom window touches
-            if (window_rows > BUF) window_rows = BUF;
-
-            // --- STAGE 1: Kernel (no grain) on a COPY of the window rows ---
-            // Copy r[] window to pr_rows[] so bloom reads kernel-processed data
-            // without corrupting the ring buffer for the next chunk.
-            if (pb) {
-                int copy_bytes = cd.output_width * 3;
-                for (int i = 0; i < window_rows; i++) memcpy(pr_rows[i], r[i], copy_bytes);
-
-                // Multithread the kernel on pr_rows[] (all window rows)
-                int kernel_rows = window_rows;
-                int active_workers = worker_count;
-                if (active_workers > kernel_rows) active_workers = kernel_rows;
-                if (kernel_rows < worker_count * 16) active_workers = 1;
-
-                RowKernelTask tasks[4];
-                for (int t = 0; t < active_workers; t++) {
-                    int start = (kernel_rows * t) / active_workers;
-                    int end = (kernel_rows * (t + 1)) / active_workers;
-
-                    tasks[t].base = pb;
-                    tasks[t].rowStride = rs;
-                    tasks[t].width = cd.output_width;
-                    tasks[t].startY = (pr > 10) ? (pr - 10) : 0;  // clamp: padding rows get ay=0
-                    tasks[t].rowStart = start;
-                    tasks[t].rowEnd = end;
-                    tasks[t].applyCrop = false;  // process all window rows
-                    tasks[t].sk = sk;
-                    tasks[t].fh = fh;
-
-                    tasks[t].scaleDenom = scaleDenom;
-                    // Engine 1 (crystal) is pre-LUT and must run here.
-                    // Engines 0/2 (post-LUT grain) are deferred to Stage 3.
-                    tasks[t].grain = (advancedGrainExperimental == 1) ? grain : 0;
-                    tasks[t].externalTex = externalTex;
-                    tasks[t].is1024Grain = is_1024_grain;
-                    tasks[t].grainTransform = grainTransform;
-                    tasks[t].baseSeed = grain_seed;
-                    tasks[t].is_mono = (bool)isMono;
-
-                    if (use_rgb) {
-                        tasks[t].kind = KERNEL_RGB;
-                        tasks[t].cx = cx; tasks[t].cy_center = cy_center; tasks[t].vig_coef = vig_coef;
-                        tasks[t].shadowToe = shadowToe; tasks[t].rollOff = rollOff;
-                        tasks[t].colorChrome = colorChrome; tasks[t].chromeBlue = chromeBlue;
-                        tasks[t].subtractiveSat = subtractiveSat; tasks[t].halation = 0;
-                        tasks[t].vignette = vignette; tasks[t].grainSize = grainSize;
-                        tasks[t].advancedGrainExperimental = advancedGrainExperimental;
-                        tasks[t].opac_mapped = opac_m; tasks[t].map = map;
-                        tasks[t].nativeLut = localLut.data(); tasks[t].nativeLutSize = localLutSize;
-                        tasks[t].lutMax = localLutSize - 1; tasks[t].lutSize2 = localLutSize * localLutSize;
-                    } else {
-                        tasks[t].kind = KERNEL_YUV;
-                        tasks[t].cx = cx; tasks[t].cy_center = cy_center; tasks[t].vig_coef = vig_coef;
-                        tasks[t].shadowToe = shadowToe; tasks[t].rollOff = rollOff;
-                        tasks[t].colorChrome = colorChrome; tasks[t].chromeBlue = chromeBlue;
-                        tasks[t].subtractiveSat = subtractiveSat; tasks[t].halation = 0;
-                        tasks[t].vignette = vignette; tasks[t].grainSize = grainSize;
-                        tasks[t].advancedGrainExperimental = advancedGrainExperimental;
-                        tasks[t].rollLut = roll;
-                    }
-                }
-
-                if (active_workers > 1) {
-                    pthread_mutex_lock(&g_pool.lock);
-                    g_pool.active_workers = active_workers - 1;
-                    g_pool.completed_workers = 0;
-                    for (int t = 1; t < active_workers; t++) {
-                        g_pool.tasks[t] = tasks[t];
-                        g_pool.start_work[t] = true;
-                    }
-                    pthread_cond_broadcast(&g_pool.cond_work);
-                    pthread_mutex_unlock(&g_pool.lock);
-                }
-                dispatch_row_kernel(&tasks[0]);
-                if (active_workers > 1) {
-                    pthread_mutex_lock(&g_pool.lock);
-                    while (g_pool.completed_workers < g_pool.active_workers) {
-                        pthread_cond_wait(&g_pool.cond_done, &g_pool.lock);
-                    }
-                    pthread_mutex_unlock(&g_pool.lock);
-                }
-            }
-
-            // --- STAGE 2: Bloom/Halation on kernel-processed pr_rows[] → orw[] ---
-            unsigned char** bloom_src = pb ? pr_rows : r;  // fallback if alloc failed
-            for (int i = 0; i < rtp; i++) {
-                int ay = pr + i;
-                if (!applyCrop || (ay >= sk && ay < sk + fh)) {
-                    unsigned char* win[21];
-                    for (int w = 0; w < 21; w++) win[w] = bloom_src[i + w];
-                    memcpy(orw[i], win[10], cd.output_width * 3);
-
-                    apply_bloom_halation(win, orw[i], cd.output_width, ay, !use_rgb, bloom, halation, grain_seed,
-                        work_0, work_1, work_2, work_h, h_line, scaleDenom, (bool)isMono);
-                }
-            }
-
-            // --- STAGE 3: Grain on orw[] — LAST (film physics) ---
-            if (needs_post_grain) {
-                int active_workers = worker_count;
-                if (active_workers > rtp) active_workers = rtp;
-                if (rtp < worker_count * 16) active_workers = 1;
-
-                RowKernelTask grain_tasks[4];
-                for (int t = 0; t < active_workers; t++) {
-                    int start = (rtp * t) / active_workers;
-                    int end = (rtp * (t + 1)) / active_workers;
-
-                    grain_tasks[t].base = ob;
-                    grain_tasks[t].rowStride = rs;
-                    grain_tasks[t].width = cd.output_width;
-                    grain_tasks[t].startY = pr;
-                    grain_tasks[t].rowStart = start;
-                    grain_tasks[t].rowEnd = end;
-                    grain_tasks[t].applyCrop = applyCrop;
-                    grain_tasks[t].sk = sk;
-                    grain_tasks[t].fh = fh;
-                    grain_tasks[t].scaleDenom = scaleDenom;
-                    grain_tasks[t].grain = grain;
-                    grain_tasks[t].grainSize = grainSize;
-                    grain_tasks[t].advancedGrainExperimental = advancedGrainExperimental;
-                    grain_tasks[t].externalTex = externalTex;
-                    grain_tasks[t].is1024Grain = is_1024_grain;
-                    grain_tasks[t].grainTransform = grainTransform;
-                    grain_tasks[t].baseSeed = grain_seed;
-                    grain_tasks[t].kind = use_rgb ? KERNEL_GRAIN_ONLY_RGB : KERNEL_GRAIN_ONLY_YUV;
-                }
-
-                if (active_workers > 1) {
-                    pthread_mutex_lock(&g_pool.lock);
-                    g_pool.active_workers = active_workers - 1;
-                    g_pool.completed_workers = 0;
-                    for (int t = 1; t < active_workers; t++) {
-                        g_pool.tasks[t] = grain_tasks[t];
-                        g_pool.start_work[t] = true;
-                    }
-                    pthread_cond_broadcast(&g_pool.cond_work);
-                    pthread_mutex_unlock(&g_pool.lock);
-                }
-                dispatch_row_kernel(&grain_tasks[0]);
-                if (active_workers > 1) {
-                    pthread_mutex_lock(&g_pool.lock);
-                    while (g_pool.completed_workers < g_pool.active_workers) {
-                        pthread_cond_wait(&g_pool.cond_done, &g_pool.lock);
-                    }
-                    pthread_mutex_unlock(&g_pool.lock);
-                }
-            }
-
-            t_kernel += (get_time_ms() - t_k_start);
-
-            long long t_e_start = get_time_ms();
-            for(int i=0; i<rtp; i++){ int ay=pr+i; if(!applyCrop||(ay>=sk && ay<sk+fh)){ rpx[0]=orw[i]; jpeg_write_scanlines(&cc,rpx,1); } }
-            t_encode += (get_time_ms() - t_e_start);
-
-            long long t_d_chunk = get_time_ms();
-            unsigned char* tmpx[256]; for(int i=0; i<rtp; i++) tmpx[i]=r[i]; for(int i=0; i<BUF-rtp; i++) r[i]=r[i+rtp];
-            for(int i=0; i<rtp; i++){ int di=BUF-rtp+i; r[di]=tmpx[i]; if(cd.output_scanline<cd.output_height){ rpx[0]=r[di]; jpeg_read_scanlines(&cd,rpx,1); } else memcpy(r[di],r[di-1],rs); }
-            t_decode += (get_time_ms() - t_d_chunk);
-
-            pr += rtp;
-        }
-
-        if (pb) free(pb);
-    }
 
     long long t_after_row_loop = get_time_ms();
 
-    if (work_0) { free(work_0); free(work_1); free(work_2); free(work_h); free(h_line); }
+    if (bloom_map) free(bloom_map);
+    if (halation_map) free(halation_map);
+
     free(rb); free(ob); jpeg_finish_compress(&cc); jpeg_destroy_compress(&cc); jpeg_finish_decompress(&cd); jpeg_destroy_decompress(&cd); fclose(inf); fclose(ouf); env->ReleaseStringUTFChars(inPath,ifn); env->ReleaseStringUTFChars(outPath,ofn);
 
     long long t_encode_finish = get_time_ms();
