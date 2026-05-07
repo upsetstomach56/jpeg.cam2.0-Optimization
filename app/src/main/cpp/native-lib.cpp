@@ -373,9 +373,12 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
             }
             
             int b_alpha = 0;
-            if (bloom == 5 || bloom == 1 || bloom == 3) b_alpha = 140; // Local
-            if (bloom == 6 || bloom == 2 || bloom == 4) b_alpha = 200; // Full
-            int h_alpha = (halation == 1) ? 100 : 160;
+            // Calibrated for 1/8th scale map to mimic Black Pro-Mist / CineBloom:
+            // 230 gives a tight, punchy glow hugging the light source.
+            // 250 gives a wide, ethereal mist spanning across the image.
+            if (bloom == 5 || bloom == 1 || bloom == 3) b_alpha = 230; // Local
+            if (bloom == 6 || bloom == 2 || bloom == 4) b_alpha = 250; // Full
+            int h_alpha = (halation == 1) ? 150 : 210;
             
             if (bloom > 0) fast_blur_2d_iir(bloom_map, map_w, map_h, b_alpha);
             if (halation > 0) fast_blur_2d_iir(halation_map, map_w, map_h, h_alpha);

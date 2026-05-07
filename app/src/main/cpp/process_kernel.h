@@ -1089,6 +1089,24 @@ static inline void process_row_rgb(
     int currRawY = prevRawY;
     int nextRawY = row_luma_rgb_at(row, width, 1);
 
+    // Hoisted bloom map calculations to prevent per-pixel overhead
+    int map_y0 = 0, map_y1 = 0, map_fy = 0, map_x_step = 0;
+    uint8_t* b_row0 = NULL; uint8_t* b_row1 = NULL;
+    uint8_t* h_row0 = NULL; uint8_t* h_row1 = NULL;
+    if (bloom_map && halation_map && map_w > 0 && map_h > 0) {
+        int map_y_fp8 = abs_y * scaleDenom * 32;
+        map_y0 = map_y_fp8 >> 8;
+        map_y1 = map_y0 + 1;
+        if (map_y0 >= map_h) map_y0 = map_h - 1;
+        if (map_y1 >= map_h) map_y1 = map_h - 1;
+        map_fy = map_y_fp8 & 255;
+        map_x_step = scaleDenom * 32;
+        b_row0 = bloom_map + map_y0 * map_w;
+        b_row1 = bloom_map + map_y1 * map_w;
+        h_row0 = halation_map + map_y0 * map_w;
+        h_row1 = halation_map + map_y1 * map_w;
+    }
+
     for (int x = 0; x < width; x++) {
         int i = x * 3;
         int r = row[i], g = row[i+1], b = row[i+2];
@@ -1232,14 +1250,15 @@ static inline void process_row_rgb(
 
             if (bloom > 0 && b_bleed > 0) {
                 int b_mix = 0;
-                if (bloom == 5 || bloom == 6) b_mix = 45;
-                else if (bloom == 1 || bloom == 2) b_mix = 90;
-                else if (bloom == 3 || bloom == 4) b_mix = 160;
+                if (bloom == 5 || bloom == 6) b_mix = 75;  // 45 * 1.67
+                else if (bloom == 1 || bloom == 2) b_mix = 150; // 90 * 1.67
+                else if (bloom == 3 || bloom == 4) b_mix = 255; // 160 * 1.67
                 int add = (b_bleed * b_mix) / 256;
                 outR += add; outG += add; outB += add;
             }
 
-            int h_mix = (halation == 1) ? 120 : 200;
+            // Halation mix matched to old engine (120->200, 200->300)
+            int h_mix = (halation == 1) ? 200 : 334;
             int h_eff = (halation_y * h_mix) / 256;
             h_eff = (h_eff * (255 - origY)) / 256;
 
@@ -1344,6 +1363,24 @@ static inline void process_row_yuv(
     int currInputY = row[0];
     int nextInputY = (width > 1) ? row[3] : row[0];
 
+    // Hoisted bloom map calculations to prevent per-pixel overhead
+    int map_y0 = 0, map_y1 = 0, map_fy = 0, map_x_step = 0;
+    uint8_t* b_row0 = NULL; uint8_t* b_row1 = NULL;
+    uint8_t* h_row0 = NULL; uint8_t* h_row1 = NULL;
+    if (bloom_map && halation_map && map_w > 0 && map_h > 0) {
+        int map_y_fp8 = abs_y * scaleDenom * 32;
+        map_y0 = map_y_fp8 >> 8;
+        map_y1 = map_y0 + 1;
+        if (map_y0 >= map_h) map_y0 = map_h - 1;
+        if (map_y1 >= map_h) map_y1 = map_h - 1;
+        map_fy = map_y_fp8 & 255;
+        map_x_step = scaleDenom * 32;
+        b_row0 = bloom_map + map_y0 * map_w;
+        b_row1 = bloom_map + map_y1 * map_w;
+        h_row0 = halation_map + map_y0 * map_w;
+        h_row1 = halation_map + map_y1 * map_w;
+    }
+
     for(int x = 0; x < width; x++) {
         int i = x * 3;
         int oldY = currInputY;
@@ -1400,55 +1437,49 @@ static inline void process_row_yuv(
         }
 
         // --- DOWNSAMPLED BLOOM & HALATION APPLICATION (YUV Space) ---
-        if (bloom_map && halation_map && map_w > 0 && map_h > 0) {
-            int map_x_fp8 = x * scaleDenom * 32; // * 256 / 8 = 32
-            int map_y_fp8 = abs_y * scaleDenom * 32;
+        if (b_row0) {
+            int map_x_fp8 = x * map_x_step;
 
             int x0 = map_x_fp8 >> 8;
-            int y0 = map_y_fp8 >> 8;
             int x1 = x0 + 1;
-            int y1 = y0 + 1;
             if (x0 >= map_w) x0 = map_w - 1;
             if (x1 >= map_w) x1 = map_w - 1;
-            if (y0 >= map_h) y0 = map_h - 1;
-            if (y1 >= map_h) y1 = map_h - 1;
 
             int fx = map_x_fp8 & 255;
-            int fy = map_y_fp8 & 255;
 
             // Sample bloom
-            int b00 = bloom_map[y0 * map_w + x0];
-            int b10 = bloom_map[y0 * map_w + x1];
-            int b01 = bloom_map[y1 * map_w + x0];
-            int b11 = bloom_map[y1 * map_w + x1];
+            int b00 = b_row0[x0];
+            int b10 = b_row0[x1];
+            int b01 = b_row1[x0];
+            int b11 = b_row1[x1];
             int b_top = b00 + (((b10 - b00) * fx) >> 8);
             int b_bot = b01 + (((b11 - b01) * fx) >> 8);
-            int blur_y = b_top + (((b_bot - b_top) * fy) >> 8);
+            int blur_y = b_top + (((b_bot - b_top) * map_fy) >> 8);
 
             // Sample halation
-            int h00 = halation_map[y0 * map_w + x0];
-            int h10 = halation_map[y0 * map_w + x1];
-            int h01 = halation_map[y1 * map_w + x0];
-            int h11 = halation_map[y1 * map_w + x1];
+            int h00 = h_row0[x0];
+            int h10 = h_row0[x1];
+            int h01 = h_row1[x0];
+            int h11 = h_row1[x1];
             int h_top = h00 + (((h10 - h00) * fx) >> 8);
             int h_bot = h01 + (((h11 - h01) * fx) >> 8);
-            int halation_y = h_top + (((h_bot - h_top) * fy) >> 8);
+            int halation_y = h_top + (((h_bot - h_top) * map_fy) >> 8);
 
             int b_bleed = blur_y - oldY;
             if (b_bleed < 0) b_bleed = 0;
 
             if (bloom > 0 && b_bleed > 0) {
                 int b_mix = 0;
-                if (bloom == 5 || bloom == 6) b_mix = 45;
-                else if (bloom == 1 || bloom == 2) b_mix = 90;
-                else if (bloom == 3 || bloom == 4) b_mix = 160;
+                if (bloom == 5 || bloom == 6) b_mix = 75;
+                else if (bloom == 1 || bloom == 2) b_mix = 150;
+                else if (bloom == 3 || bloom == 4) b_mix = 255;
                 int add_y = (b_bleed * b_mix) / 256;
                 outY += add_y;
                 cb = cb + ((-cb) * add_y) / 256; // Pulls saturation towards white (0 chroma)
                 cr = cr + ((-cr) * add_y) / 256;
             }
 
-            int h_mix = (halation == 1) ? 120 : 200;
+            int h_mix = (halation == 1) ? 200 : 334;
             int h_eff = (halation_y * h_mix) / 256;
             h_eff = (h_eff * (255 - oldY)) / 256;
 
