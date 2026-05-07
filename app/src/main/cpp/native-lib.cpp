@@ -278,8 +278,8 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
     FILE *inf = fopen(ifn, "rb"), *ouf = fopen(ofn, "wb");
     if(!inf||!ouf){ if(inf)fclose(inf); if(ouf)fclose(ouf); env->ReleaseStringUTFChars(inPath,ifn); env->ReleaseStringUTFChars(outPath,ofn); return JNI_FALSE; }
 
-    static char in_buf[262144];
-    static char out_buf[262144];
+    static char in_buf[65536];
+    static char out_buf[65536];
     setvbuf(inf, in_buf, _IOFBF, sizeof(in_buf));
     setvbuf(ouf, out_buf, _IOFBF, sizeof(out_buf));
 
@@ -306,6 +306,8 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
     cd.dct_method = JDCT_IFAST;
     cd.do_fancy_upsampling = doFancyUpscale ? TRUE : FALSE;
     jpeg_start_decompress(&cd);
+
+    long long t_after_decode_init = get_time_ms();
 
     struct jpeg_compress_struct cc; struct my_error_mgr jc; cc.err = jpeg_std_error(&jc.pub); jc.pub.error_exit = my_error_exit;
     if(setjmp(jc.setjmp_buffer)){ jpeg_destroy_compress(&cc); jpeg_destroy_decompress(&cd); fclose(inf); fclose(ouf); env->ReleaseStringUTFChars(inPath,ifn); env->ReleaseStringUTFChars(outPath,ofn); return JNI_FALSE; }
@@ -402,16 +404,22 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
     if (worker_count < 1) worker_count = 1;
     if (worker_count > 4) worker_count = 4;
 
+    long long t_decode = 0;
+    long long t_kernel = 0;
+    long long t_encode = 0;
+
     bool row_stream_mode = (bloom <= 0 && halation <= 0 && advancedGrainExperimental != 1);
     if (row_stream_mode) {
         while (cd.output_scanline < cd.output_height) {
             int ay = cd.output_scanline;
             int rows_read = 0;
+            long long t_d_start = get_time_ms();
             while (rows_read < CHK && cd.output_scanline < cd.output_height) {
                 JDIMENSION got = jpeg_read_scanlines(&cd, &r[rows_read], CHK - rows_read);
                 if (got == 0) break;
                 rows_read += (int)got;
             }
+            t_decode += (get_time_ms() - t_d_start);
             if (rows_read <= 0) break;
 
             int active_workers = worker_count;
@@ -479,6 +487,7 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
                 pthread_mutex_unlock(&g_pool.lock);
             }
 
+            long long t_k_start = get_time_ms();
             dispatch_row_kernel(&tasks[0]);
 
             if (active_workers > 1) {
@@ -488,13 +497,16 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
                 }
                 pthread_mutex_unlock(&g_pool.lock);
             }
+            t_kernel += (get_time_ms() - t_k_start);
 
+            long long t_e_start = get_time_ms();
             int rows_written = 0;
             while (rows_written < rows_read) {
                 JDIMENSION wrote = jpeg_write_scanlines(&cc, &r[rows_written], rows_read - rows_written);
                 if (wrote == 0) break;
                 rows_written += (int)wrote;
             }
+            t_encode += (get_time_ms() - t_e_start);
         }
     } else {
         if(cd.output_height>0){ rpx[0]=r[10]; jpeg_read_scanlines(&cd,rpx,1); for(int i=0; i<10; i++) memcpy(r[i],r[10],rs); }
@@ -597,6 +609,29 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
 
     if (work_0) { free(work_0); free(work_1); free(work_2); free(work_h); free(h_line); }
     free(rb); free(ob); jpeg_finish_compress(&cc); jpeg_destroy_compress(&cc); jpeg_finish_decompress(&cd); jpeg_destroy_decompress(&cd); fclose(inf); fclose(ouf); env->ReleaseStringUTFChars(inPath,ifn); env->ReleaseStringUTFChars(outPath,ofn);
+
+    long long t_encode_finish = get_time_ms();
+    long long decode_setup = t_after_decode_init - st;
+    long long row_loop = t_after_row_loop - t_after_decode_init;
+    long long encode_finish = t_encode_finish - t_after_row_loop;
+    long long total = t_encode_finish - st;
+    
+    char perf_buf[256];
+    snprintf(perf_buf, sizeof(perf_buf), "PERF: total=%lldms (setup=%lldms decode=%lldms kernel=%lldms encode=%lldms cleanup=%lldms) scale=%d W=%d H=%d",
+             total, decode_setup, t_decode, t_kernel, t_encode, encode_finish, scaleDenom, cd.output_width, cd.output_height);
+    __android_log_print(ANDROID_LOG_DEBUG, "JPEG.CAM", "%s", perf_buf);
+    
+    jclass debugLogClass = env->FindClass("com/github/ma1co/pmcademo/app/DebugLog");
+    if (debugLogClass) {
+        jmethodID writeMethod = env->GetStaticMethodID(debugLogClass, "write", "(Ljava/lang/String;)V");
+        if (writeMethod) {
+            jstring jmsg = env->NewStringUTF(perf_buf);
+            env->CallStaticVoidMethod(debugLogClass, writeMethod, jmsg);
+            env->DeleteLocalRef(jmsg);
+        }
+        env->DeleteLocalRef(debugLogClass);
+    }
+
     return JNI_TRUE;
 }
 

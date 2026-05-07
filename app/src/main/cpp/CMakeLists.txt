@@ -21,9 +21,6 @@ add_library(native-lib SHARED native-lib.cpp)
 target_compile_options(native-lib PRIVATE
     -O3
     -ffast-math
-    -march=armv7-a
-    -mtune=cortex-a5
-    -mfloat-abi=softfp
 )
 
 target_include_directories(native-lib PRIVATE

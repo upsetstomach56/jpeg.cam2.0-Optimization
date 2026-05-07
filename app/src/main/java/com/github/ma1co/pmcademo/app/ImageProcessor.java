@@ -178,6 +178,7 @@ public class ImageProcessor {
                 int numCores = rm.isMultiCoreEnabled() ? Runtime.getRuntime().availableProcessors() : 1;
                 boolean doFancyUpscale = rm.isFancyUpscaleEnabled();
                 Log.d("JPEG.CAM", "Processing with " + numCores + " core(s). MultiCore=" + rm.isMultiCoreEnabled());
+                DebugLog.write("PROC CORES: " + numCores + " (MultiCore Setting: " + rm.isMultiCoreEnabled() + ", FancyUpscale: " + doFancyUpscale + ")");
 
                 // Halation warm cast only applies in mono/sepia modes.
                 // colorMode "Mono"/"Sepia", or pictureEffects containing "mono" are all mono.
