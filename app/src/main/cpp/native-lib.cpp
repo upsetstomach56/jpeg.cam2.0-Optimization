@@ -601,7 +601,7 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
             }
             t_encode += (get_time_ms() - t_e_start);
         }
-
+    }
 
     long long t_after_row_loop = get_time_ms();
 
