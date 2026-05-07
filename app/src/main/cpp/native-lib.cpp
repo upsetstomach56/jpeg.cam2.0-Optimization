@@ -517,18 +517,8 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
         int pr = 0; while(pr < (int)cd.output_height){
             long long t_k_start = get_time_ms();
             int rtp = std::min(CHK, (int)cd.output_height-pr);
-            for (int i = 0; i < rtp; i++) {
-                int ay = pr + i;
-                if (!applyCrop || (ay >= sk && ay < sk + fh)) {
-                    unsigned char* win[21];
-                    for (int w = 0; w < 21; w++) win[w] = r[i + w];
-                    memcpy(orw[i], win[10], cd.output_width * 3);
-
-                    apply_bloom_halation(win, orw[i], cd.output_width, ay, !use_rgb, bloom, halation, grain_seed,
-                        work_0, work_1, work_2, work_h, h_line, scaleDenom, (bool)isMono);
-                }
-            }
-
+            
+            // Multithread the entire windowed chunk
             int active_workers = worker_count;
             if (active_workers > rtp) active_workers = rtp;
             if (rtp < worker_count * 16) active_workers = 1;
@@ -561,7 +551,7 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
                     tasks[t].cx = cx; tasks[t].cy_center = cy_center; tasks[t].vig_coef = vig_coef;
                     tasks[t].shadowToe = shadowToe; tasks[t].rollOff = rollOff;
                     tasks[t].colorChrome = colorChrome; tasks[t].chromeBlue = chromeBlue;
-                    tasks[t].subtractiveSat = subtractiveSat; tasks[t].halation = 0;
+                    tasks[t].subtractiveSat = subtractiveSat; tasks[t].halation = 0; // Bloom handles halation here
                     tasks[t].vignette = vignette; tasks[t].grainSize = grainSize;
                     tasks[t].advancedGrainExperimental = advancedGrainExperimental;
                     tasks[t].opac_mapped = opac_m; tasks[t].map = map;
@@ -572,10 +562,23 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
                     tasks[t].cx = cx; tasks[t].cy_center = cy_center; tasks[t].vig_coef = vig_coef;
                     tasks[t].shadowToe = shadowToe; tasks[t].rollOff = rollOff;
                     tasks[t].colorChrome = colorChrome; tasks[t].chromeBlue = chromeBlue;
-                    tasks[t].subtractiveSat = subtractiveSat; tasks[t].halation = 0;
+                    tasks[t].subtractiveSat = subtractiveSat; tasks[t].halation = 0; // Bloom handles halation here
                     tasks[t].vignette = vignette; tasks[t].grainSize = grainSize;
                     tasks[t].advancedGrainExperimental = advancedGrainExperimental;
                     tasks[t].rollLut = roll;
+                }
+            }
+
+            // Execute Bloom/Halation sequentially since it needs sliding window over r[]
+            for (int i = 0; i < rtp; i++) {
+                int ay = pr + i;
+                if (!applyCrop || (ay >= sk && ay < sk + fh)) {
+                    unsigned char* win[21];
+                    for (int w = 0; w < 21; w++) win[w] = r[i + w];
+                    memcpy(orw[i], win[10], cd.output_width * 3);
+
+                    apply_bloom_halation(win, orw[i], cd.output_width, ay, !use_rgb, bloom, halation, grain_seed,
+                        work_0, work_1, work_2, work_h, h_line, scaleDenom, (bool)isMono);
                 }
             }
 
