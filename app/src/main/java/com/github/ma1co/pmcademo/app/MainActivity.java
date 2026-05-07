@@ -361,6 +361,18 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        try {
+            java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader("/proc/cpuinfo"));
+            String line;
+            while ((line = br.readLine()) != null) {
+                DebugLog.write("CPUINFO: " + line);
+            }
+            br.close();
+        } catch (Exception e) {
+            DebugLog.write("CPUINFO: read failed: " + e.getMessage());
+        }
+        DebugLog.write("CPUINFO: availableProcessors=" + Runtime.getRuntime().availableProcessors());
+
         // <--- NEW: Force the Android Window to 32-bit true color
         getWindow().setFormat(android.graphics.PixelFormat.RGBA_8888);
 

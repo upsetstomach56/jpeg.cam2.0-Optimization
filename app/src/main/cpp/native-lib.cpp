@@ -477,6 +477,8 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
         }
     }
 
+    long long t_after_row_loop = get_time_ms();
+
     if (work_0) { free(work_0); free(work_1); free(work_2); free(work_h); free(h_line); }
     free(rb); free(ob); jpeg_finish_compress(&cc); jpeg_destroy_compress(&cc); jpeg_finish_decompress(&cd); jpeg_destroy_decompress(&cd); fclose(inf); fclose(ouf); env->ReleaseStringUTFChars(inPath,ifn); env->ReleaseStringUTFChars(outPath,ofn);
     return JNI_TRUE;
@@ -771,6 +773,41 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_MultiEx
             for (int x = 0; x < total_pixels; x++) {
                 int sum = 0;
                 for (int i = 0; i < count; i++) sum += row_bufs[i][x];
+                out_buf[x] = (unsigned char)(sum / count);
+            }
+        } else if (blendMode == 1) { // Lighten
+            for (int x = 0; x < total_pixels; x++) {
+                unsigned char mx = row_bufs[0][x];
+                for (int i = 1; i < count; i++) {
+                    if (row_bufs[i][x] > mx) mx = row_bufs[i][x];
+                }
+                out_buf[x] = mx;
+            }
+        }
+        
+        int written_so_far = 0;
+        while(written_so_far < rows_to_read) {
+            int wrote = jpeg_write_scanlines(&cc, &out_ptrs[written_so_far], rows_to_read - written_so_far);
+            if (wrote == 0) break;
+            written_so_far += wrote;
+        }
+    }
+    
+    jpeg_finish_compress(&cc);
+    jpeg_destroy_compress(&cc);
+    fclose(outf);
+    
+    for (int i = 0; i < count; i++) {
+        jpeg_finish_decompress(&cds[i]);
+        jpeg_destroy_decompress(&cds[i]);
+        fclose(infs[i]);
+        free(row_bufs[i]);
+    }
+    free(out_buf);
+    
+    return JNI_TRUE;
+}
+ count; i++) sum += row_bufs[i][x];
                 out_buf[x] = (unsigned char)(sum / count);
             }
         } else if (blendMode == 1) { // Lighten
