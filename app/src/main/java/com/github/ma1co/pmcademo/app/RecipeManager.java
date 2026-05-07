@@ -576,7 +576,3 @@ public class RecipeManager {
         scanVault();
     }
 }
-argetFile), p);
-        scanVault();
-    }
-}
