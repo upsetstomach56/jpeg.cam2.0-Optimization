@@ -147,7 +147,7 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
             stbi_image_free(id);
         }
     } else if (ex==".cube"||ex==".cub") {
-        FILE *f = fopen(fp, "r"); if(f){ char l[256]; size_t c=0; while(fgets(l, 256, f)){ if(strncmp(l,"LUT_3D_SIZE",11)==0){ sscanf(l,"LUT_3D_SIZE %d",&nativeLutSize); nativeLut.resize(nativeLutSize*nativeLutSize*nativeLutSize*3); c=0; continue; } float r,g,b; if(nativeLutSize>0 && sscanf(l,"%f %f %f",&r,&g,&b)==3){ if(c+2<nativeLut.size()){ nativeLut[c++]=(uint8_t)(r*255); nativeLut[c++]=(uint8_t)(g*255); nativeLut[c++]=(uint8_t)(b*255); } } } fclose(f); }
+        FILE *f = fopen(fp, "r"); if(f){ char l[256]; size_t c=0; while(fgets(l, 256, f)){ if(strncmp(l,"LUT_3D_SIZE",11)==0){ sscanf(l,"LUT_3D_SIZE %d",&nativeLutSize); nativeLut.resize(nativeLutSize*nativeLutSize*nativeLutSize*3); c=0; continue; } if(nativeLutSize>0){ char* p1=l; char* p2; char* p3; float r=(float)strtod(p1,&p2); if(p2==p1) continue; float g=(float)strtod(p2,&p3); if(p3==p2) continue; char* p4; float b=(float)strtod(p3,&p4); if(p4==p3) continue; if(c+2<nativeLut.size()){ nativeLut[c++]=(uint8_t)(r*255); nativeLut[c++]=(uint8_t)(g*255); nativeLut[c++]=(uint8_t)(b*255); } } } fclose(f); }
     }
     env->ReleaseStringUTFChars(path, fp); 
     jboolean result = nativeLutSize>0 ? JNI_TRUE : JNI_FALSE;
@@ -220,7 +220,7 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
     jint vignette, jint rollOff, jint colorChrome, jint chromeBlue,
     jint shadowToe, jint subtractiveSat, jint halation,
     jint bloom, jint advancedGrainExperimental, jint jpegQuality,
-    jboolean applyCrop, jint numCores) {
+    jboolean isMono, jboolean applyCrop, jint numCores) {
 
     long long st = get_time_ms(); const char *ifn = env->GetStringUTFChars(inPath, NULL); const char *ofn = env->GetStringUTFChars(outPath, NULL);
     FILE *inf = fopen(ifn, "rb"), *ouf = fopen(ofn, "wb");
@@ -424,7 +424,7 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
                             grain, grainSize, scaleDenom, advancedGrainExperimental, grain_seed,
                             opac_m, map, localLut.data(),
                             localLutSize, localLutSize - 1, localLutSize * localLutSize,
-                            externalTex, is_1024_grain, grainTransform);
+                            externalTex, is_1024_grain, grainTransform, (bool)isMono);
                     } else if (use_fast_yuv_texture) {
                         process_row_yuv_texture_fast(r[0], cd.output_width, ay,
                             grain, scaleDenom, fast_yuv_texture_lut,
@@ -433,7 +433,7 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
                         process_row_yuv(r[0], cd.output_width, ay, cx, cy_center, vig_coef,
                             shadowToe, rollOff, colorChrome, chromeBlue, subtractiveSat, halation, vignette,
                             grain, grainSize, scaleDenom, advancedGrainExperimental, grain_seed,
-                            roll, externalTex, is_1024_grain, grainTransform);
+                            roll, externalTex, is_1024_grain, grainTransform, (bool)isMono);
                     }
                     jpeg_write_scanlines(&cc, rpx, 1);
                 }
@@ -453,7 +453,7 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
                     memcpy(orw[i], win[10], cd.output_width * 3);
 
                     apply_bloom_halation(win, orw[i], cd.output_width, ay, !use_rgb, bloom, halation, grain_seed,
-                        work_0, work_1, work_2, work_h, h_line, scaleDenom);
+                        work_0, work_1, work_2, work_h, h_line, scaleDenom, (bool)isMono);
 
                     if (use_rgb) {
                         process_row_rgb(orw[i], cd.output_width, ay, cx, cy_center, vig_coef,
@@ -461,12 +461,12 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
                             grain, grainSize, scaleDenom, advancedGrainExperimental, grain_seed,
                             opac_m, map, localLut.data(),
                             localLutSize, localLutSize - 1, localLutSize * localLutSize,
-                            externalTex, is_1024_grain, grainTransform);
+                            externalTex, is_1024_grain, grainTransform, (bool)isMono);
                     } else {
                         process_row_yuv(orw[i], cd.output_width, ay, cx, cy_center, vig_coef,
                             shadowToe, rollOff, colorChrome, chromeBlue, subtractiveSat, 0, vignette,
                             grain, grainSize, scaleDenom, advancedGrainExperimental, grain_seed,
-                            roll, externalTex, is_1024_grain, grainTransform);
+                            roll, externalTex, is_1024_grain, grainTransform, (bool)isMono);
                     }
                 }
             }

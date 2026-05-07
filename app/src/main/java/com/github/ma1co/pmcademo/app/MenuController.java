@@ -259,7 +259,7 @@ public class MenuController {
         homeContainer.setOrientation(LinearLayout.VERTICAL);
         homeContainer.setPadding(4, 2, 4, 4);
         TextView homeTitle = new TextView(ctx);
-        homeTitle.setText("JPEG.CAM");
+        homeTitle.setText("JPEG.CAM  v" + host.getAppVersion());
         homeTitle.setTextColor(UiTheme.TEXT);
         homeTitle.setTextSize(26);
         homeTitle.setTypeface(Typeface.DEFAULT_BOLD);

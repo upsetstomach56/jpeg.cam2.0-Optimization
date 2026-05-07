@@ -669,7 +669,7 @@ inline int legacy_grain_noise(int x, int abs_y, int grainSize, uint32_t& seed) {
 // ==========================================
 inline void apply_bloom_halation(
     unsigned char** rows, uint8_t* out_row, int width, int abs_y, bool is_yuv, int bloom, int halation, uint32_t seed,
-    int* work_0, int* work_1, int* work_2, int* work_h, int* h_line, int scaleDenom)
+    int* work_0, int* work_1, int* work_2, int* work_h, int* h_line, int scaleDenom, bool is_mono = false)
 {
     // 1. Resolution-Aware Alphas & Intensities
     int alpha, b_mix;
@@ -705,47 +705,37 @@ inline void apply_bloom_halation(
 
     if (!work_0 || !work_h) return;
 
-    // 2. Vertical Summation: Extracting Pure Light Maps (High Precision)
-    for (int x = 0; x < width; x++) {
-        long long s0 = 0, sh = 0;
-        for (int y = 0; y <= 20; y++) {
-            int w = (y <= 10) ? (y + 1) : (21 - y); // Triangle weight
-            int v0 = rows[y][x*3], v1 = rows[y][x*3+1], v2 = rows[y][x*3+2];
-
-            // Calculate true brightness (Luma)
-            int lum = is_yuv ? v0 : ((v0*77 + v1*150 + v2*29) / 256);
-
-            // --- V6 "SMART" LUMINANCE-DEPENDENT BLOOM EMISSION ---
-            int bloom_emission;
-
-            if (bloom > 0 && bloom % 2 == 0) {
-                // FULL BLOOM (Evens: 2, 4, 6): Leaves shadows linear to maintain global image softening,
-                // but violently boosts highlights into the HDR range.
-                if (lum < 128) {
-                    bloom_emission = lum;
-                } else {
-                    bloom_emission = lum + (((lum - 128) * (lum - 128)) >> 6);
-                }
+    // 2. Vertical Summation: y-outer loop for cache-friendly sequential row reads.
+    //    Pre-build a bloom emission LUT once per call to eliminate per-pixel branches
+    //    and multiplications inside the 21×width inner loop.
+    uint16_t bloom_emit_lut[256];
+    if (bloom > 0) {
+        const bool full_bloom = (bloom % 2 == 0);
+        for (int i = 0; i < 256; i++) {
+            int e;
+            if (full_bloom) {
+                // FULL BLOOM (Evens): linear shadows, boosted highlights
+                e = (i < 128) ? i : i + (((i - 128) * (i - 128)) >> 6);
             } else {
-                // LOCAL BLOOM (Odds: 1, 3, 5): Crushes shadow emission geometrically for deep contrast,
-                // only glowing from bright practical light sources.
-                if (lum < 128) {
-                    bloom_emission = (lum * lum) >> 7;
-                } else {
-                    bloom_emission = lum + (((lum - 128) * (lum - 128)) >> 6);
-                }
+                // LOCAL BLOOM (Odds): crushed shadows, boosted highlights
+                e = (i < 128) ? ((i * i) >> 7) : i + (((i - 128) * (i - 128)) >> 6);
             }
-
-            s0 += bloom_emission * w;
-
-            // Halation remains untouched (it only pulls from extreme highlights)
-            if (lum > 210) {
-                sh += (lum - 210) * 5 * w;
-            }
+            bloom_emit_lut[i] = (uint16_t)e;
         }
+    }
 
-        work_0[x] = (int)s0;
-        work_h[x] = (int)sh;
+    memset(work_0, 0, width * sizeof(int));
+    memset(work_h, 0, width * sizeof(int));
+
+    for (int y = 0; y <= 20; y++) {
+        const int w = (y <= 10) ? (y + 1) : (21 - y); // Triangle weight
+        const uint8_t* row_y = rows[y];
+        for (int x = 0; x < width; x++) {
+            const int v0 = row_y[x*3];
+            const int lum = is_yuv ? v0 : ((v0*77 + row_y[x*3+1]*150 + row_y[x*3+2]*29) >> 8);
+            if (bloom > 0) work_0[x] += bloom_emit_lut[lum] * w;
+            if (halation > 0 && lum > 210) work_h[x] += (lum - 210) * 5 * w;
+        }
     }
 
     // 3. Horizontal IIR Blur (Spreading the high-precision light maps)
@@ -803,8 +793,12 @@ inline void apply_bloom_halation(
 
             if (halation > 0 && h_eff > 0) {
                 y_res += h_eff / 3;
-                cr_res += h_eff;
-                cb_res -= h_eff / 2;
+                if (!is_mono) {
+                    // Warm golden cast — color mode only (real film behavior)
+                    cr_res += h_eff;
+                    cb_res -= h_eff / 2;
+                }
+                // Mono/sepia: neutral white glow only (B&W film has no color cast)
             }
 
             out_row[x*3]   = (uint8_t)CLAMP(y_res);
@@ -822,9 +816,17 @@ inline void apply_bloom_halation(
             }
 
             if (halation > 0 && h_eff > 0) {
-                r_res += h_eff;
-                g_res += h_eff / 5;
-                b_res -= h_eff / 5;
+                if (!is_mono) {
+                    // Warm golden cast — color mode only (real film behavior)
+                    r_res += h_eff;
+                    g_res += h_eff / 5;
+                    b_res -= h_eff / 5;
+                } else {
+                    // Neutral white glow in mono/sepia (B&W film has no color cast)
+                    r_res += h_eff / 3;
+                    g_res += h_eff / 3;
+                    b_res += h_eff / 3;
+                }
             }
 
             out_row[x*3]   = (uint8_t)CLAMP(r_res);
@@ -1003,7 +1005,8 @@ inline void process_row_rgb(
     const uint8_t* nativeLut, int nativeLutSize, int lutMax, int lutSize2,
     const uint8_t* externalGrainTexture = NULL,
     bool is_1024_grain = false,
-    int grainTransform = 0)
+    int grainTransform = 0,
+    bool is_mono = false)
 {
     int s_roll   = rollOff * 20;
     int s_chrome = colorChrome * 40;
@@ -1012,6 +1015,28 @@ inline void process_row_rgb(
     int s_grain = (grain * 40) + (grain * grain * 12);
     s_grain = (s_grain * grain_resolution_scale256(scaleDenom) + 128) >> 8;
     const int texture_base_mix = (grain >= 5) ? 256 : (grain * 51);
+
+    // Pre-compute tone curve LUT (shadowToe + rollOff) once per row.
+    // Eliminates per-pixel integer divisions (/ 140, / 180, / 11000) and branches.
+    // ratio256[i] = (tone_lut[i] * 256) / i, usable when color effects don't further
+    // modify targetY (checked below via the no_color_fx flag).
+    uint8_t  tone_lut[256];
+    uint16_t ratio256[256];
+    {
+        const int lift     = (shadowToe == 1) ? 35 : 55;
+        const int liftDiv  = (shadowToe == 1) ? 140 : 180;
+        for (int i = 0; i < 256; i++) {
+            int t = i;
+            if (shadowToe > 0 && t < lift)
+                t += ((lift - t) * (lift - t)) / liftDiv;
+            if (rollOff > 0 && t > 200)
+                t -= ((t - 200) * (t - 200) * s_roll) / 11000;
+            if (t < 8) t = 8;
+            tone_lut[i]  = (uint8_t)CLAMP(t);
+            ratio256[i]  = (uint16_t)((tone_lut[i] * 256) / (i == 0 ? 1 : i));
+        }
+    }
+    const bool no_color_fx = (s_chrome == 0 && s_blue == 0 && s_sat == 0);
 
     long long dy = (long long)(abs_y - cy_center);
     long long d_sq = ((long long)(0 - cx) * (long long)(0 - cx)) + (dy * dy);
@@ -1075,13 +1100,7 @@ inline void process_row_rgb(
         int outB = b + ((((p[2]*w0 + p1_v[2]*w1 + p2_v[2]*w2 + p3_v[2]*w3) >> 7) - b) * opac_mapped >> 8);
 
         int currentY = (outR*77 + outG*150 + outB*29) >> 8;
-        int targetY = currentY;
-
-        if (shadowToe > 0) {
-            int lift = (shadowToe == 1) ? 35 : 55;
-            if (targetY < lift) targetY += ((lift - targetY) * (lift - targetY)) / (shadowToe == 1 ? 140 : 180);
-        }
-        if (rollOff > 0 && targetY > 200) targetY -= ((targetY - 200) * (targetY - 200) * s_roll) / 11000;
+        int targetY  = tone_lut[currentY]; // replaces inline shadowToe + rollOff math
 
         // --- OPTIMIZATION: Only run heavy color math if effects are ON ---
         if (s_chrome > 0 || s_blue > 0 || s_sat > 0) {
@@ -1110,15 +1129,19 @@ inline void process_row_rgb(
             }
         }
 
-        if (targetY < 8) targetY = 8;
         if (targetY != currentY) {
-            int r256 = (targetY * 256) / (currentY == 0 ? 1 : currentY);
+            // Use pre-computed ratio when color effects haven't further changed targetY,
+            // otherwise fall back to the division (color effects make targetY unpredictable).
+            int r256 = (no_color_fx || targetY == tone_lut[currentY])
+                ? ratio256[currentY]
+                : (targetY * 256) / (currentY == 0 ? 1 : currentY);
             outR = (outR * r256) >> 8; outG = (outG * r256) >> 8; outB = (outB * r256) >> 8;
         }
 
         if (halation > 0 && targetY > 245) {
             int push = (targetY - 245) * (halation == 1 ? 3 : 6);
-            outR += push; outG -= (push >> 2); outB -= (push >> 1);
+            outR += push;
+            if (!is_mono) { outG -= (push >> 2); outB -= (push >> 1); }
         }
 
         if (vignette > 0) {
@@ -1201,7 +1224,8 @@ inline void process_row_yuv(
     const uint8_t* rolloff_lut,
     const uint8_t* externalGrainTexture = NULL,
     bool is_1024_grain = false,
-    int grainTransform = 0)
+    int grainTransform = 0,
+    bool is_mono = false)
 {
     int s_chrome = colorChrome * 40;
     int s_blue   = chromeBlue * 40;
@@ -1273,7 +1297,7 @@ inline void process_row_yuv(
         if (outY < 8) outY = 8;
         if (halation > 0 && outY > 245) {
             int push = (outY - 245) * (halation == 1 ? 3 : 6);
-            cr += push; cb -= (push >> 1);
+            if (!is_mono) { cr += push; cb -= (push >> 1); }
         }
 
         if (oldY != outY) {

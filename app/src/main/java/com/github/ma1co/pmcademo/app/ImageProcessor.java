@@ -178,6 +178,12 @@ public class ImageProcessor {
                 int numCores = rm.isMultiCoreEnabled() ? Runtime.getRuntime().availableProcessors() : 1;
                 Log.d("JPEG.CAM", "Processing with " + numCores + " core(s). MultiCore=" + rm.isMultiCoreEnabled());
 
+                // Halation warm cast only applies in mono/sepia modes.
+                // colorMode "Mono"/"Sepia", or pictureEffects containing "mono" are all mono.
+                String cm = p.colorMode != null ? p.colorMode.toLowerCase() : "";
+                String pe = p.pictureEffect != null ? p.pictureEffect.toLowerCase() : "";
+                boolean isMono = cm.equals("mono") || cm.equals("sepia") || pe.contains("mono");
+
                 boolean success = mEngine.applyLutToJpeg(
                     original.getAbsolutePath(), outFile.getAbsolutePath(),
                     scale, p.opacity, p.grain, finalGrainSize, p.vignette, p.rollOff,
@@ -185,7 +191,7 @@ public class ImageProcessor {
                     p.halation, finalBloom,
                     cxxGrainEngine,
                     finalJpegQuality,
-                    applyCrop, numCores);  // <--- ADDED numCores HERE
+                    isMono, applyCrop, numCores);
                 if (success) {
                     DebugLog.write("PROC END: SAVED -> " + outFile.getName());
                     return "SAVED";
