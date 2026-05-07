@@ -373,11 +373,16 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
             }
             
             int b_alpha = 0;
-            // Calibrated for 1/8th scale map to mimic Black Pro-Mist / CineBloom:
-            // 230 gives a tight, punchy glow hugging the light source.
-            // 250 gives a wide, ethereal mist spanning across the image.
-            if (bloom == 5 || bloom == 1 || bloom == 3) b_alpha = 230; // Local
-            if (bloom == 6 || bloom == 2 || bloom == 4) b_alpha = 250; // Full
+            // Radius now steps up dynamically with filter strength!
+            // Local Bloom (Tight glow, crushed shadows)
+            if (bloom == 5) b_alpha = 180;      // 1/8 strength
+            else if (bloom == 1) b_alpha = 195; // 1/4 strength
+            else if (bloom == 3) b_alpha = 210; // 1/2 strength
+            // Full Bloom (Wide mist, linear shadows)
+            else if (bloom == 6) b_alpha = 200; // 1/8 strength
+            else if (bloom == 2) b_alpha = 215; // 1/4 strength
+            else if (bloom == 4) b_alpha = 230; // 1/2 strength
+
             int h_alpha = (halation == 1) ? 150 : 210;
             
             if (bloom > 0) fast_blur_2d_iir(bloom_map, map_w, map_h, b_alpha);
