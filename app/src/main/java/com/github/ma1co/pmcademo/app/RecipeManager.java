@@ -19,6 +19,7 @@ public class RecipeManager {
 
     private int qualityIndex = 1;
     private int multiCoreEnabled = 0; // 0 = SINGLE-CORE, 1 = MULTI-CORE
+    private int fancyUpscaleEnabled = 0; // 0 = STD (FAST), 1 = HQ
     private int prefC1 = 0;
     private int prefC2 = 0;
     private int prefC3 = 0;
@@ -55,6 +56,12 @@ public class RecipeManager {
     public boolean isMultiCoreEnabled() { return multiCoreEnabled == 1; }
     public void setMultiCoreEnabled(boolean enabled) {
         this.multiCoreEnabled = enabled ? 1 : 0;
+        savePreferences();
+    }
+
+    public boolean isFancyUpscaleEnabled() { return fancyUpscaleEnabled == 1; }
+    public void setFancyUpscaleEnabled(boolean enabled) {
+        this.fancyUpscaleEnabled = enabled ? 1 : 0;
         savePreferences();
     }
 
@@ -357,6 +364,7 @@ public class RecipeManager {
             FileOutputStream fos = new FileOutputStream(prefsFile);
             String prefsData = "quality=" + qualityIndex + "\nslot=" + currentSlot + "\n" +
                                "multicore=" + multiCoreEnabled + "\n" +
+                               "fancyupscale=" + fancyUpscaleEnabled + "\n" +
                                "c1=" + prefC1 + "\nc2=" + prefC2 + "\nc3=" + prefC3 + "\n" +
                                "ael=" + prefAel + "\nfn=" + prefFn + "\n";
             fos.write(prefsData.getBytes());
@@ -565,6 +573,10 @@ public class RecipeManager {
         RTLProfile p = loadedProfiles[currentSlot];
         p.profileName = newPrettyName;
         saveProfileToFile(new File(recipeDir, targetFile), p);
+        scanVault();
+    }
+}
+argetFile), p);
         scanVault();
     }
 }

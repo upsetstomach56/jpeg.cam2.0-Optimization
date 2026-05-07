@@ -930,7 +930,8 @@ public class MenuController {
             else if (sel == 2) host.setPrefGridLines(!host.isPrefGridLines());
             else if (sel == 3) host.setPrefJpegQuality(Math.max(60, Math.min(100, host.getPrefJpegQuality() + dir * 5)));
             else if (sel == 4) rm.setMultiCoreEnabled(!rm.isMultiCoreEnabled());
-            else if (sel == 5) {
+            else if (sel == 5) rm.setFancyUpscaleEnabled(!rm.isFancyUpscaleEnabled());
+            else if (sel == 6) {
                 int mode = 0;
                 if (host.isPrefCinemaMattes()) mode = 1;
                 else if (host.isPrefDiptych()) mode = 2;
@@ -942,8 +943,8 @@ public class MenuController {
                 host.setPrefDiptych(mode == 2);
                 host.setPrefMultiExpose(mode == 3);
             }
-            else if (sel == 6 && host.isPrefMultiExpose()) host.setMultiExposeCount(Math.max(2, Math.min(9, host.getMultiExposeCount() + dir)));
-            else if (sel == 7 && host.isPrefMultiExpose()) host.setMultiExposeBlendMode(host.getMultiExposeBlendMode() == 0 ? 1 : 0);
+            else if (sel == 7 && host.isPrefMultiExpose()) host.setMultiExposeCount(Math.max(2, Math.min(9, host.getMultiExposeCount() + dir)));
+            else if (sel == 8 && host.isPrefMultiExpose()) host.setMultiExposeBlendMode(host.getMultiExposeBlendMode() == 0 ? 1 : 0);
         } else if (currentPage == 7) {
             if      (sel == 0) rm.setPrefC1(clampCustomButtonAction(rm.getPrefC1() + dir));
             else if (sel == 1) rm.setPrefC2(clampCustomButtonAction(rm.getPrefC2() + dir));
@@ -1136,7 +1137,7 @@ public class MenuController {
             }
         }
         if (currentPage == 6) {
-            ic = 6;
+            ic = 7;
             String[] qLbls = {"1/4 RES","HALF RES","FULL RES"};
 
             String creativeMode = "OFF";
@@ -1149,12 +1150,13 @@ public class MenuController {
             setRow(2, "Rule of Thirds Grid",   host.isPrefGridLines()    ? "ON" : "OFF");
             setRow(3, "SW JPEG Quality",       String.valueOf(host.getPrefJpegQuality()));
             setRow(4, "CPU Engine",            rm.isMultiCoreEnabled() ? "MULTI-CORE" : "SINGLE-CORE");
-            setRow(5, "Creative Modes",        creativeMode);
+            setRow(5, "JPEG UPSCALE",          rm.isFancyUpscaleEnabled() ? "HQ" : "STD");
+            setRow(6, "Creative Modes",        creativeMode);
             
             if (host.isPrefMultiExpose()) {
-                setRow(6, "  > Exposure Count", String.valueOf(host.getMultiExposeCount()) + " SHOTS");
-                setRow(7, "  > Blend Mode",     host.getMultiExposeBlendMode() == 0 ? "AVERAGE" : "LIGHTEN");
-                ic = 8;
+                setRow(7, "  > Exposure Count", String.valueOf(host.getMultiExposeCount()) + " SHOTS");
+                setRow(8, "  > Blend Mode",     host.getMultiExposeBlendMode() == 0 ? "AVERAGE" : "LIGHTEN");
+                ic = 9;
             }
         } else if (currentPage == 7) {
             ic = 5;

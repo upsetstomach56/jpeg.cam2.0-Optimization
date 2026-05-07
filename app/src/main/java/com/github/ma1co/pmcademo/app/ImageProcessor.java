@@ -176,6 +176,7 @@ public class ImageProcessor {
                 // Use the CPU Engine toggle from Settings (page 6) to decide thread count.
                 RecipeManager rm = ((MainActivity) mContext).getRecipeManager();
                 int numCores = rm.isMultiCoreEnabled() ? Runtime.getRuntime().availableProcessors() : 1;
+                boolean doFancyUpscale = rm.isFancyUpscaleEnabled();
                 Log.d("JPEG.CAM", "Processing with " + numCores + " core(s). MultiCore=" + rm.isMultiCoreEnabled());
 
                 // Halation warm cast only applies in mono/sepia modes.
@@ -191,7 +192,7 @@ public class ImageProcessor {
                     p.halation, finalBloom,
                     cxxGrainEngine,
                     finalJpegQuality,
-                    isMono, applyCrop, numCores);
+                    isMono, applyCrop, numCores, doFancyUpscale);
                 if (success) {
                     DebugLog.write("PROC END: SAVED -> " + outFile.getName());
                     return "SAVED";

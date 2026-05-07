@@ -23,14 +23,14 @@ public class LutEngine {
     private native boolean loadGrainTextureNative(String filePath);
 
     // Signature matches C++ exactly: 17 total parameters after env/obj
-    private native boolean processImageNative(
-        String inPath, String outPath, int scaleDenom, int opacity,
-        int grain, int grainSize, int vignette, int rollOff,
-        int colorChrome, int chromeBlue, int shadowToe,
-        int subtractiveSat, int halation, int bloom,
-        int advancedGrainExperimental, int jpegQuality,
-        boolean isMono, boolean applyCrop, int numCores
-    );
+    public native boolean processImageNative(String inPath, String outPath,
+                                           int scaleDenom, int opacity,
+                                           int grain, int grainSize, int vignette,
+                                           int rollOff, int colorChrome, int chromeBlue,
+                                           int shadowToe, int subtractiveSat,
+                                           int halation, int bloom, int advancedGrainExperimental,
+                                           int jpegQuality,
+                                           boolean isMono, boolean applyCrop, int numCores, boolean doFancyUpscale);
 
     /**
      * Loads either a .cube/.cub or .png HaldCLUT from the SD card.
@@ -69,12 +69,12 @@ public class LutEngine {
                                   int subtractiveSat, int halation, int bloom,
                                   int advancedGrainExperimental,
                                   int quality,
-                                  boolean isMono, boolean applyCrop, int numCores) {
+                                  boolean isMono, boolean applyCrop, int numCores, boolean doFancyUpscale) {
         return processImageNative(in, out, scale, opacity, grain, grainSize, vignette,
                                  rollOff, colorChrome, chromeBlue, shadowToe,
                                  subtractiveSat, halation, bloom,
                                  advancedGrainExperimental, quality,
-                                 isMono, applyCrop, numCores);
+                                 isMono, applyCrop, numCores, doFancyUpscale);
     }
 
     // Public wrapper to load the grain texture safely (loose-file path).
