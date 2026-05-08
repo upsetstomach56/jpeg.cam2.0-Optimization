@@ -149,7 +149,9 @@ public class MenuController {
         boolean isPrefDiptych(); // <--- ADDED
         boolean isPrefDoubleExposure();
         boolean isPrefGridLines();
+        boolean isPrefLiveViewMonochrome();
         int     getPrefJpegQuality();
+        int     getAppTheme();
         int     getProcessingFrequency();
         int     getQueuedPhotoCount();
         List<ProcessingQueueManager.Entry> getQueuedPhotoEntries();
@@ -162,7 +164,9 @@ public class MenuController {
         void setPrefDiptych(boolean v); // <--- ADDED
         void setPrefDoubleExposure(boolean v);
         void setPrefGridLines(boolean v);
+        void setPrefLiveViewMonochrome(boolean v);
         void setPrefJpegQuality(int v);
+        void setAppTheme(int v);
         void setProcessingFrequency(int v);
         void forceProcessQueuedPhotos();
         void processSelectedQueuedPhotos(boolean[] selected);
@@ -211,6 +215,13 @@ public class MenuController {
     // Owned views
     // -----------------------------------------------------------------------
     private final LinearLayout   container;
+    private final LinearLayout   headerBar;
+    private final TextView       headerTitle;
+    private final TextView       headerPath;
+    private final LinearLayout   bodyLayout;
+    private final LinearLayout   railColumn;
+    private final TextView[]     railItems = new TextView[5];
+    private final LinearLayout   contentColumn;
     private final LinearLayout[] rows   = new LinearLayout[8];
     private final TextView[]     labels = new TextView[8];
     private final TextView[]     values = new TextView[8];
@@ -255,8 +266,55 @@ public class MenuController {
 
         container = new LinearLayout(ctx);
         container.setOrientation(LinearLayout.VERTICAL);
-        UiTheme.panel(container);
-        container.setPadding(24, 18, 24, 18);
+        UiTheme.clear(container);
+        container.setPadding(16, 12, 16, 12);
+
+        headerBar = new LinearLayout(ctx);
+        headerBar.setOrientation(LinearLayout.HORIZONTAL);
+        headerBar.setGravity(Gravity.CENTER_VERTICAL);
+        headerBar.setPadding(14, 8, 14, 8);
+        UiTheme.titlePanel(headerBar, UiTheme.ACCENT);
+        LinearLayout.LayoutParams headerLp = new LinearLayout.LayoutParams(-1, -2);
+        headerLp.setMargins(0, 0, 0, 10);
+        container.addView(headerBar, headerLp);
+
+        headerTitle = new TextView(ctx);
+        headerTitle.setText("JPEG.CAM");
+        headerTitle.setTextColor(UiTheme.TEXT);
+        headerTitle.setTextSize(18);
+        headerTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        headerTitle.setGravity(Gravity.CENTER_VERTICAL);
+        headerTitle.setSingleLine(true);
+        headerBar.addView(headerTitle, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+        headerPath = new TextView(ctx);
+        headerPath.setTextColor(UiTheme.ACCENT);
+        headerPath.setTextSize(12);
+        headerPath.setTypeface(Typeface.DEFAULT_BOLD);
+        headerPath.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        headerPath.setSingleLine(true);
+        headerBar.addView(headerPath, new LinearLayout.LayoutParams(0, -2, 1.35f));
+
+        bodyLayout = new LinearLayout(ctx);
+        bodyLayout.setOrientation(LinearLayout.HORIZONTAL);
+        bodyLayout.setGravity(Gravity.TOP);
+        container.addView(bodyLayout, new LinearLayout.LayoutParams(-1, 0, 1.0f));
+
+        railColumn = new LinearLayout(ctx);
+        railColumn.setOrientation(LinearLayout.VERTICAL);
+        railColumn.setPadding(0, 0, 10, 0);
+        bodyLayout.addView(railColumn, new LinearLayout.LayoutParams(138, -1));
+
+        String[] railLabels = {"RECIPES", "SETTINGS", "QUEUE", "NETWORK", "SUPPORT"};
+        for (int i = 0; i < railItems.length; i++) {
+            railItems[i] = makeRailItem(ctx, railLabels[i]);
+            railColumn.addView(railItems[i]);
+        }
+
+        contentColumn = new LinearLayout(ctx);
+        contentColumn.setOrientation(LinearLayout.VERTICAL);
+        contentColumn.setPadding(0, 0, 0, 0);
+        bodyLayout.addView(contentColumn, new LinearLayout.LayoutParams(0, -1, 1.0f));
 
         homeContainer = new LinearLayout(ctx);
         homeContainer.setOrientation(LinearLayout.VERTICAL);
@@ -264,7 +322,7 @@ public class MenuController {
         TextView homeTitle = new TextView(ctx);
         homeTitle.setText("JPEG.CAM");
         homeTitle.setTextColor(UiTheme.TEXT);
-        homeTitle.setTextSize(26);
+        homeTitle.setTextSize(22);
         homeTitle.setTypeface(Typeface.DEFAULT_BOLD);
         homeTitle.setGravity(Gravity.CENTER);
         homeTitle.setPadding(0, 0, 0, 10);
@@ -304,7 +362,7 @@ public class MenuController {
         queueRow.addView(homeProcessingFrequency);
         queueRow.addView(homeQueueAction);
         homeContainer.addView(queueRow, new LinearLayout.LayoutParams(-1, -2));
-        container.addView(homeContainer, new LinearLayout.LayoutParams(-1, 0, 1.0f));
+        contentColumn.addView(homeContainer, new LinearLayout.LayoutParams(-1, 0, 1.0f));
 
         // Detail header row: Back plus category page tabs
         tabRow = new LinearLayout(ctx);
@@ -331,7 +389,7 @@ public class MenuController {
         tabRow.addView(tvTabNetwork);
         tabRow.addView(tvTabSupport);
         tabRow.addView(tvTabExtra);
-        container.addView(tabRow);
+        contentColumn.addView(tabRow);
 
         // Support tab content (hidden by default)
         supportContainer = new LinearLayout(ctx);
@@ -359,22 +417,22 @@ public class MenuController {
         tvDesc.setText("Manuals, Lens Profiles, & Support");
         tvDesc.setTextColor(UiTheme.TEXT_MUTED); tvDesc.setTextSize(12);
         supportContainer.addView(tvDesc);
-        container.addView(supportContainer, new LinearLayout.LayoutParams(-1, -1));
+        contentColumn.addView(supportContainer, new LinearLayout.LayoutParams(-1, 0, 1.0f));
 
         // Page subtitle
         tvSubtitle = new TextView(ctx);
-        tvSubtitle.setTextSize(18);
+        tvSubtitle.setTextSize(16);
         tvSubtitle.setTextColor(UiTheme.TEXT);
         tvSubtitle.setTypeface(Typeface.DEFAULT_BOLD);
         tvSubtitle.setPadding(12, 4, 12, 14);
-        container.addView(tvSubtitle);
+        contentColumn.addView(tvSubtitle);
 
         // Divider
         pageDivider = new View(ctx);
         pageDivider.setBackgroundColor(UiTheme.BORDER);
         LinearLayout.LayoutParams divLp = new LinearLayout.LayoutParams(-1, 2);
         divLp.setMargins(0, 0, 0, 15);
-        container.addView(pageDivider, divLp);
+        contentColumn.addView(pageDivider, divLp);
 
         // 8 content rows
         for (int i = 0; i < 8; i++) {
@@ -382,7 +440,9 @@ public class MenuController {
             rows[i].setOrientation(LinearLayout.HORIZONTAL);
             rows[i].setGravity(Gravity.CENTER_VERTICAL);
             rows[i].setPadding(12, 0, 12, 0);
-            container.addView(rows[i], new LinearLayout.LayoutParams(-1, 0, 1.0f));
+            LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-1, 0, 1.0f);
+            rowLp.setMargins(0, 3, 0, 3);
+            contentColumn.addView(rows[i], rowLp);
             thumbs[i] = new ImageView(ctx);
             thumbs[i].setScaleType(ImageView.ScaleType.CENTER_CROP);
             thumbs[i].setVisibility(View.GONE);
@@ -390,11 +450,11 @@ public class MenuController {
             thumbLp.setMargins(0, 0, 10, 0);
             rows[i].addView(thumbs[i], thumbLp);
             labels[i] = new TextView(ctx);
-            labels[i].setTextSize(17);
+            labels[i].setTextSize(15);
             labels[i].setTypeface(Typeface.DEFAULT_BOLD);
             labels[i].setSingleLine(false);
             values[i] = new TextView(ctx);
-            values[i].setTextSize(17);
+            values[i].setTextSize(15);
             values[i].setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
             values[i].setSingleLine(false);
             rows[i].addView(labels[i], new LinearLayout.LayoutParams(0, -2, 1.0f));
@@ -403,7 +463,7 @@ public class MenuController {
                 View rowDiv = new View(ctx);
                 rowDiv.setBackgroundColor(Color.argb(90, 117, 145, 140));
                 rowDividers[i] = rowDiv;
-                container.addView(rowDiv, new LinearLayout.LayoutParams(-1, 1));
+                contentColumn.addView(rowDiv, new LinearLayout.LayoutParams(-1, 1));
             }
         }
 
@@ -987,6 +1047,8 @@ public class MenuController {
             else if (sel == 3) host.setPrefGridLines(!host.isPrefGridLines());
             else if (sel == 4) host.setPrefJpegQuality(Math.max(60, Math.min(100, host.getPrefJpegQuality() + dir * 5)));
             else if (sel == 5) rm.setMultiCoreEnabled(!rm.isMultiCoreEnabled());
+            else if (sel == 6) host.setAppTheme((host.getAppTheme() + dir + UiTheme.themeCount()) % UiTheme.themeCount());
+            else if (sel == 7) host.setPrefLiveViewMonochrome(!host.isPrefLiveViewMonochrome());
         } else if (currentPage == 7) {
             if      (sel == 0) rm.setPrefC1(clampCustomButtonAction(rm.getPrefC1() + dir));
             else if (sel == 1) rm.setPrefC2(clampCustomButtonAction(rm.getPrefC2() + dir));
@@ -1074,6 +1136,8 @@ public class MenuController {
 
         // Detail page tabs
         int accent = manualQueueOpen ? UiTheme.ACCENT : currentTabAccent();
+        renderOptionARail(accent);
+        updateOptionAHeader();
         if (manualQueueOpen) configureBackOnlyHeader(accent);
         else configurePageTabs(accent);
 
@@ -1180,7 +1244,7 @@ public class MenuController {
             }
         }
         if (currentPage == 6) {
-            ic = 6;
+            ic = 8;
             String[] qLbls = {"1/4 RES","HALF RES","FULL RES"};
 
             String creativeMode = "OFF";
@@ -1194,6 +1258,8 @@ public class MenuController {
             setRow(3, "Rule of Thirds Grid",   host.isPrefGridLines()    ? "ON" : "OFF");
             setRow(4, "SW JPEG Quality",       String.valueOf(host.getPrefJpegQuality()));
             setRow(5, "CPU Engine",            rm.isMultiCoreEnabled() ? "MULTI-CORE" : "SINGLE-CORE");
+            setRow(6, "Color Theme",           UiTheme.themeName(host.getAppTheme()));
+            setRow(7, "Monochrome Live View",  host.isPrefLiveViewMonochrome() ? "ON" : "OFF");
         } else if (currentPage == 7) {
             ic = 5;
             setRow(0, "Custom 1 (C1)", customButtonLabel(rm.getPrefC1()));
@@ -1261,11 +1327,11 @@ public class MenuController {
             if (i == selection) {
                 labels[i].setText(plain);
                 if (!active) {
-                    UiTheme.clear(rows[i]);
+                    UiTheme.actionPanel(rows[i], accent, false, false);
                     UiTheme.dimText(labels[i]);
                     UiTheme.dimText(values[i]);
                 } else if (isEditing || isNaming) {
-                    UiTheme.clear(rows[i]);
+                    UiTheme.activeOutlinePanel(rows[i], accent);
                     UiTheme.selectedText(labels[i]);
                     values[i].setTextColor(accent);
                     values[i].setShadowLayer(2, 0, 0, UiTheme.SHADOW);
@@ -1276,11 +1342,12 @@ public class MenuController {
                 }
             } else {
                 labels[i].setText(plain);
-                UiTheme.clear(rows[i]);
                 if (active) {
+                    UiTheme.actionPanel(rows[i], accent, false, true);
                     labels[i].setTextColor(UiTheme.TEXT);
                     values[i].setTextColor(UiTheme.TEXT_MUTED);
                 } else {
+                    UiTheme.actionPanel(rows[i], accent, false, false);
                     UiTheme.dimText(labels[i]);
                     UiTheme.dimText(values[i]);
                 }
@@ -1657,7 +1724,7 @@ public class MenuController {
         tabRow.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
         tvBack.setText("BACK");
         UiTheme.pageTabPanel(tvBack, accent, selection == -2 && headerSelection == 0, false);
-        tvBack.setTextColor(selection == -2 && headerSelection == 0 ? UiTheme.TEXT : UiTheme.TEXT_MUTED);
+        tvBack.setTextColor(selection == -2 && headerSelection == 0 ? UiTheme.TEXT_ON_ACCENT : UiTheme.TEXT_MUTED);
 
         for (int i = 0; i < pageTabs.length; i++) {
             TextView tab = pageTabs[i];
@@ -1670,7 +1737,7 @@ public class MenuController {
             boolean active = currentPage == pages[i];
             boolean selected = selection == -2 && headerSelection == i + 1;
             UiTheme.pageTabPanel(tab, accent, selected, active);
-            tab.setTextColor(active || selected ? UiTheme.TEXT : UiTheme.TEXT_MUTED);
+            tab.setTextColor(selected ? UiTheme.TEXT_ON_ACCENT : (active ? UiTheme.TEXT : UiTheme.TEXT_MUTED));
         }
     }
 
@@ -1678,7 +1745,7 @@ public class MenuController {
         tabRow.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
         tvBack.setText("BACK");
         UiTheme.pageTabPanel(tvBack, accent, selection == -2, false);
-        tvBack.setTextColor(selection == -2 ? UiTheme.TEXT : UiTheme.TEXT_MUTED);
+        tvBack.setTextColor(selection == -2 ? UiTheme.TEXT_ON_ACCENT : UiTheme.TEXT_MUTED);
         tvBack.setVisibility(View.VISIBLE);
         for (int i = 0; i < pageTabs.length; i++) {
             pageTabs[i].setVisibility(View.GONE);
@@ -1686,6 +1753,8 @@ public class MenuController {
     }
 
     private void renderHome() {
+        renderOptionARail(UiTheme.ACCENT);
+        updateOptionAHeader();
         homeContainer.setVisibility(View.VISIBLE);
         tabRow.setVisibility(View.GONE);
         supportContainer.setVisibility(View.GONE);
@@ -1700,10 +1769,10 @@ public class MenuController {
             if (i < rowDividers.length && rowDividers[i] != null) rowDividers[i].setVisibility(View.GONE);
         }
 
-        styleHomeTile(0, "RECIPES", UiTheme.ACCENT_RECIPES, selection == 0);
-        styleHomeTile(1, "SETTINGS", UiTheme.ACCENT_SETTINGS, selection == 1);
-        styleHomeTile(2, "NETWORK", UiTheme.ACCENT_NETWORK, selection == 2);
-        styleHomeTile(3, "SUPPORT", UiTheme.ACCENT_SUPPORT, selection == 3);
+        styleHomeTile(0, "RECIPES", UiTheme.ACCENT, selection == 0);
+        styleHomeTile(1, "SETTINGS", UiTheme.ACCENT, selection == 1);
+        styleHomeTile(2, "NETWORK", UiTheme.ACCENT, selection == 2);
+        styleHomeTile(3, "SUPPORT", UiTheme.ACCENT, selection == 3);
 
         int freq = host.getProcessingFrequency();
         String frequencyLabel = freq == PROCESSING_FREQUENCY_MANUAL ? "MANUAL" : (freq <= 1 ? "INSTANT" : (freq + " SHOTS"));
@@ -1725,7 +1794,7 @@ public class MenuController {
         TextView tile = homeTiles[index];
         tile.setText(text);
         UiTheme.tilePanel(tile, accent, selected);
-        tile.setTextColor(UiTheme.TEXT);
+        tile.setTextColor(selected ? UiTheme.TEXT_ON_ACCENT : UiTheme.TEXT);
         tile.setShadowLayer(selected ? 2 : 0, 0, 0, UiTheme.SHADOW);
     }
 
@@ -1735,9 +1804,9 @@ public class MenuController {
         value.setText(valueText.toUpperCase());
         if (selected) {
             UiTheme.selected(view, accent);
-            label.setTextColor(UiTheme.TEXT);
+            label.setTextColor(UiTheme.TEXT_ON_ACCENT);
             label.setShadowLayer(2, 0, 0, UiTheme.SHADOW);
-            value.setTextColor(editing ? UiTheme.WARN : UiTheme.TEXT);
+            value.setTextColor(editing ? UiTheme.WARN : UiTheme.TEXT_ON_ACCENT);
             value.setShadowLayer(2, 0, 0, UiTheme.SHADOW);
         } else if (!active) {
             UiTheme.actionPanel(view, accent, false, false);
@@ -1752,15 +1821,77 @@ public class MenuController {
         }
     }
 
+    private void updateOptionAHeader() {
+        UiTheme.titlePanel(headerBar, UiTheme.ACCENT);
+        headerTitle.setTextColor(UiTheme.TEXT);
+        headerPath.setTextColor(UiTheme.ACCENT);
+        headerTitle.setText("JPEG.CAM");
+        String section;
+        String page;
+        if (manualQueueOpen) {
+            section = "QUEUE";
+            page = "PHOTO QUEUE";
+        } else if (isHome()) {
+            section = "MENU";
+            page = "DASHBOARD";
+        } else {
+            String[] categories = {"RECIPES", "SETTINGS", "NETWORK", "SUPPORT"};
+            section = currentMainTab >= 0 && currentMainTab < categories.length ? categories[currentMainTab] : "MENU";
+            String[] labels = categoryPageLabels(currentMainTab);
+            int[] pages = categoryPages(currentMainTab);
+            page = "";
+            for (int i = 0; i < pages.length; i++) {
+                if (pages[i] == currentPage) {
+                    page = labels[i];
+                    break;
+                }
+            }
+            if (page.length() == 0) page = section;
+        }
+        String state = isNaming ? " / NAMING" : (isConfirmingDelete ? " / CONFIRM" : (isEditing ? " / EDITING" : ""));
+        headerPath.setText(section + " / " + page + state);
+    }
+
+    private void renderOptionARail(int accent) {
+        int activeRail = activeRailIndex();
+        for (int i = 0; i < railItems.length; i++) {
+            TextView item = railItems[i];
+            boolean active = i == activeRail;
+            boolean selected = isHome() && homeSelectionToRail(selection) == i;
+            UiTheme.railPanel(item, accent, active, selected);
+            item.setTextColor(selected ? UiTheme.TEXT_ON_ACCENT : (active ? UiTheme.TEXT : UiTheme.TEXT_MUTED));
+            item.setShadowLayer(active || selected ? 2 : 0, 0, 0, UiTheme.SHADOW);
+        }
+    }
+
+    private int activeRailIndex() {
+        if (manualQueueOpen) return 2;
+        if (isHome()) return homeSelectionToRail(selection);
+        if (currentMainTab == 0) return 0;
+        if (currentMainTab == 1) return 1;
+        if (currentMainTab == 2) return 3;
+        if (currentMainTab == 3) return 4;
+        return 0;
+    }
+
+    private int homeSelectionToRail(int sel) {
+        if (sel == 0) return 0;
+        if (sel == 1) return 1;
+        if (sel == 4 || sel == 5) return 2;
+        if (sel == 2) return 3;
+        if (sel == 3) return 4;
+        return -1;
+    }
+
     private void updateRowDividers(int count) {
         for (int i = 0; i < rowDividers.length; i++) {
-            if (rowDividers[i] != null) rowDividers[i].setVisibility(i < count - 1 ? View.VISIBLE : View.GONE);
+            if (rowDividers[i] != null) rowDividers[i].setVisibility(View.GONE);
         }
     }
 
     private TextView makeHomeTile(Context ctx) {
         TextView tv = new TextView(ctx);
-        tv.setTextSize(20);
+        tv.setTextSize(18);
         tv.setTypeface(Typeface.DEFAULT_BOLD);
         tv.setGravity(Gravity.CENTER);
         tv.setSingleLine(false);
@@ -1769,6 +1900,22 @@ public class MenuController {
         lp.setMargins(5, 5, 5, 5);
         tv.setLayoutParams(lp);
         UiTheme.softPanel(tv);
+        return tv;
+    }
+
+    private TextView makeRailItem(Context ctx, String text) {
+        TextView tv = new TextView(ctx);
+        tv.setText(text);
+        tv.setTextSize(12);
+        tv.setTypeface(Typeface.DEFAULT_BOLD);
+        tv.setGravity(Gravity.CENTER_VERTICAL);
+        tv.setSingleLine(false);
+        tv.setPadding(11, 10, 8, 10);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(0, 0, 0, 7);
+        tv.setLayoutParams(lp);
+        tv.setTextColor(UiTheme.TEXT_MUTED);
+        UiTheme.railPanel(tv, UiTheme.ACCENT, false, false);
         return tv;
     }
 
@@ -1801,7 +1948,7 @@ public class MenuController {
     private TextView makeTabHeader(Context ctx, String text) {
         TextView tv = new TextView(ctx);
         tv.setText(text);
-        tv.setTextSize(15);
+        tv.setTextSize(12);
         tv.setTypeface(Typeface.DEFAULT_BOLD);
         tv.setGravity(Gravity.CENTER);
         tv.setPadding(0, 9, 0, 9);
@@ -1818,9 +1965,6 @@ public class MenuController {
     }
 
     private int tabAccent(int tab) {
-        if (tab == 1) return UiTheme.ACCENT_SETTINGS;
-        if (tab == 2) return UiTheme.ACCENT_NETWORK;
-        if (tab == 3) return UiTheme.ACCENT_SUPPORT;
-        return UiTheme.ACCENT_RECIPES;
+        return UiTheme.ACCENT;
     }
 }

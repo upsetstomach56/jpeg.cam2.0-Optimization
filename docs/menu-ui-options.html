@@ -1,0 +1,1596 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JPEG.CAM Menu UI Options</title>
+  <style>
+    :root {
+      --page: #0a0d0f;
+      --page-soft: #101416;
+      --panel: rgba(8, 11, 13, 0.95);
+      --panel-soft: rgba(18, 22, 22, 0.88);
+      --panel-raised: rgba(25, 28, 28, 0.92);
+      --line: rgba(234, 133, 48, 0.34);
+      --line-soft: rgba(239, 246, 243, 0.12);
+      --accent: #ea8530;
+      --accent-soft: rgba(234, 133, 48, 0.17);
+      --accent-strong: #f1ad62;
+      --text: #eff6f3;
+      --muted: #8f9d9a;
+      --dim: #445050;
+      --danger: #ec5a54;
+      --shadow: rgba(0, 0, 0, 0.4);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at top left, rgba(234, 133, 48, 0.14), transparent 34rem),
+        linear-gradient(180deg, #0d1113, #070909 60%, #050606);
+      color: var(--text);
+      letter-spacing: 0;
+    }
+
+    main {
+      width: min(1180px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 36px 0 56px;
+    }
+
+    header {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 18px;
+      align-items: end;
+      margin-bottom: 26px;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      font-size: 30px;
+      font-weight: 720;
+    }
+
+    h2 {
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    h3 {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--accent-strong);
+      text-transform: uppercase;
+    }
+
+    p {
+      color: var(--muted);
+      line-height: 1.48;
+      font-size: 14px;
+    }
+
+    .lede {
+      max-width: 760px;
+      margin-top: 8px;
+    }
+
+    .tag {
+      border: 1px solid var(--line);
+      background: var(--accent-soft);
+      color: var(--accent-strong);
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .option {
+      border: 1px solid var(--line-soft);
+      background: rgba(10, 13, 15, 0.68);
+      border-radius: 10px;
+      box-shadow: 0 18px 42px var(--shadow);
+      padding: 20px;
+      margin-top: 22px;
+    }
+
+    .option-head {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 16px;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .rating {
+      display: flex;
+      gap: 7px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 99px;
+      background: var(--dim);
+    }
+
+    .dot.on {
+      background: var(--accent);
+      box-shadow: 0 0 18px rgba(234, 133, 48, 0.45);
+    }
+
+    .camera {
+      aspect-ratio: 16 / 9;
+      min-height: 520px;
+      border: 1px solid rgba(234, 133, 48, 0.22);
+      border-radius: 8px;
+      background:
+        linear-gradient(135deg, rgba(239, 246, 243, 0.06), transparent 38%),
+        linear-gradient(180deg, #111719, #080b0d);
+      padding: 18px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .camera::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(90deg, transparent, rgba(234, 133, 48, 0.04) 50%, transparent),
+        repeating-linear-gradient(0deg, rgba(255,255,255,0.025), rgba(255,255,255,0.025) 1px, transparent 1px, transparent 4px);
+      pointer-events: none;
+      opacity: 0.45;
+    }
+
+    .screen {
+      position: relative;
+      z-index: 1;
+      height: 100%;
+      display: grid;
+      gap: 14px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 42px;
+      border: 1px solid var(--line-soft);
+      background: rgba(5, 7, 8, 0.72);
+      border-radius: 7px;
+      padding: 8px 12px;
+    }
+
+    .brand {
+      color: var(--text);
+      font-weight: 760;
+      letter-spacing: 0;
+    }
+
+    .crumbs {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+
+    .badge {
+      color: var(--accent-strong);
+      background: var(--accent-soft);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 5px 8px;
+      font-size: 11px;
+      font-weight: 750;
+      text-transform: uppercase;
+    }
+
+    .tab {
+      color: var(--muted);
+      border: 1px solid transparent;
+      background: rgba(239, 246, 243, 0.05);
+      border-radius: 5px;
+      padding: 8px 10px;
+      font-size: 12px;
+      font-weight: 740;
+      text-transform: uppercase;
+      min-width: 86px;
+      text-align: center;
+    }
+
+    .tab.active,
+    .rail-item.active,
+    .seg.active {
+      color: var(--text);
+      border-color: var(--line);
+      background: linear-gradient(180deg, rgba(234, 133, 48, 0.28), rgba(234, 133, 48, 0.12));
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: minmax(160px, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      min-height: 42px;
+      border: 1px solid var(--line-soft);
+      background: rgba(239, 246, 243, 0.055);
+      border-radius: 6px;
+      padding: 8px 10px;
+    }
+
+    .row.selected {
+      border-color: var(--line);
+      background: rgba(234, 133, 48, 0.14);
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
+
+    .row-title {
+      font-size: 13px;
+      font-weight: 730;
+      color: var(--text);
+      text-transform: uppercase;
+    }
+
+    .row-sub {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 2px;
+      text-transform: uppercase;
+      font-weight: 650;
+    }
+
+    .value {
+      color: var(--accent-strong);
+      font-size: 12px;
+      font-weight: 760;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .button {
+      border: 1px solid var(--line-soft);
+      background: rgba(239, 246, 243, 0.06);
+      color: var(--muted);
+      border-radius: 6px;
+      padding: 8px 10px;
+      min-width: 74px;
+      text-align: center;
+      font-size: 11px;
+      text-transform: uppercase;
+      font-weight: 760;
+    }
+
+    .button.primary {
+      color: var(--text);
+      background: var(--accent-soft);
+      border-color: var(--line);
+    }
+
+    .button.danger {
+      color: #ffb8b4;
+      border-color: rgba(236, 90, 84, 0.4);
+      background: rgba(236, 90, 84, 0.13);
+    }
+
+    .mini-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      font-weight: 760;
+      margin-bottom: 8px;
+    }
+
+    .preview {
+      border: 1px solid var(--line-soft);
+      background: rgba(239, 246, 243, 0.045);
+      border-radius: 7px;
+      padding: 10px;
+    }
+
+    .thumb {
+      aspect-ratio: 4 / 3;
+      border-radius: 4px;
+      background:
+        linear-gradient(135deg, rgba(240, 198, 145, 0.25), transparent 38%),
+        linear-gradient(180deg, #394849, #111516);
+      border: 1px solid rgba(239, 246, 243, 0.12);
+    }
+
+    .keyboard {
+      display: grid;
+      grid-template-columns: repeat(10, 1fr);
+      gap: 6px;
+    }
+
+    .key {
+      min-height: 29px;
+      border: 1px solid var(--line-soft);
+      border-radius: 5px;
+      background: rgba(239, 246, 243, 0.06);
+      color: var(--text);
+      display: grid;
+      place-items: center;
+      font-size: 12px;
+      font-weight: 750;
+    }
+
+    .key.active {
+      border-color: var(--line);
+      background: var(--accent-soft);
+      color: var(--accent-strong);
+    }
+
+    .keyboard-panel {
+      border: 1px solid var(--line);
+      background: rgba(6, 9, 11, 0.96);
+      border-radius: 8px;
+      padding: 12px;
+      box-shadow: 0 12px 28px var(--shadow);
+    }
+
+    .text-input {
+      border: 1px solid var(--line-soft);
+      background: rgba(239, 246, 243, 0.06);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin: 8px 0 10px;
+      font-size: 16px;
+      font-weight: 720;
+    }
+
+    .modal {
+      position: absolute;
+      right: 24px;
+      bottom: 24px;
+      width: 320px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(7, 10, 12, 0.97);
+      padding: 14px;
+      box-shadow: 0 18px 40px var(--shadow);
+      z-index: 3;
+    }
+
+    .grid-a {
+      grid-template-columns: 168px 1fr 256px;
+      grid-template-rows: auto 1fr;
+    }
+
+    .grid-a .topbar {
+      grid-column: 1 / -1;
+    }
+
+    .rail {
+      display: grid;
+      gap: 8px;
+      align-content: start;
+    }
+
+    .rail-item {
+      border: 1px solid var(--line-soft);
+      background: rgba(239, 246, 243, 0.045);
+      color: var(--muted);
+      border-radius: 6px;
+      padding: 12px 10px;
+      font-size: 12px;
+      font-weight: 760;
+      text-transform: uppercase;
+    }
+
+    .content {
+      display: grid;
+      gap: 10px;
+      align-content: start;
+      min-width: 0;
+    }
+
+    .side {
+      display: grid;
+      gap: 10px;
+      align-content: start;
+    }
+
+    .segments {
+      display: flex;
+      gap: 7px;
+      flex-wrap: wrap;
+    }
+
+    .seg {
+      border: 1px solid var(--line-soft);
+      background: rgba(239, 246, 243, 0.045);
+      color: var(--muted);
+      border-radius: 5px;
+      padding: 7px 9px;
+      font-size: 11px;
+      font-weight: 750;
+      text-transform: uppercase;
+    }
+
+    .grid-b {
+      grid-template-rows: auto auto 1fr auto;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 300px;
+      gap: 12px;
+      min-height: 0;
+    }
+
+    .rows {
+      display: grid;
+      gap: 8px;
+      align-content: start;
+    }
+
+    .grid-c {
+      grid-template-columns: 1fr 310px;
+      grid-template-rows: auto 1fr;
+    }
+
+    .grid-c .topbar {
+      grid-column: 1 / -1;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      align-content: start;
+    }
+
+    .card {
+      border: 1px solid var(--line-soft);
+      border-radius: 7px;
+      background: rgba(239, 246, 243, 0.05);
+      padding: 12px;
+      min-height: 112px;
+      display: grid;
+      align-content: space-between;
+    }
+
+    .card.selected {
+      border-color: var(--line);
+      background: rgba(234, 133, 48, 0.13);
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
+
+    .grid-d {
+      grid-template-columns: 330px 1fr;
+      grid-template-rows: auto 1fr;
+    }
+
+    .grid-d .topbar {
+      grid-column: 1 / -1;
+    }
+
+    .list {
+      display: grid;
+      gap: 8px;
+      align-content: start;
+      overflow: hidden;
+    }
+
+    .inspector {
+      border: 1px solid var(--line-soft);
+      background: rgba(239, 246, 243, 0.045);
+      border-radius: 7px;
+      padding: 12px;
+      display: grid;
+      gap: 10px;
+      align-content: start;
+    }
+
+    .rules {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    .rule {
+      border: 1px solid var(--line-soft);
+      background: rgba(239, 246, 243, 0.045);
+      border-radius: 8px;
+      padding: 14px;
+    }
+
+    .compare {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 24px;
+      border: 1px solid var(--line-soft);
+      overflow: hidden;
+      border-radius: 8px;
+      font-size: 13px;
+    }
+
+    .compare th,
+    .compare td {
+      border-bottom: 1px solid var(--line-soft);
+      padding: 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .compare th {
+      color: var(--accent-strong);
+      background: rgba(234, 133, 48, 0.1);
+      text-transform: uppercase;
+      font-size: 11px;
+    }
+
+    .compare td {
+      color: var(--muted);
+      background: rgba(8, 11, 13, 0.58);
+    }
+
+    .deep-dive {
+      border: 1px solid var(--line);
+      background:
+        linear-gradient(180deg, rgba(234, 133, 48, 0.09), rgba(8, 11, 13, 0.72)),
+        rgba(8, 11, 13, 0.88);
+      border-radius: 10px;
+      box-shadow: 0 18px 42px var(--shadow);
+      padding: 20px;
+      margin-top: 22px;
+    }
+
+    .deep-layout {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 16px;
+      margin-top: 16px;
+    }
+
+    .deep-stack {
+      display: grid;
+      gap: 12px;
+      align-content: start;
+    }
+
+    .deep-card {
+      border: 1px solid var(--line-soft);
+      background: rgba(239, 246, 243, 0.045);
+      border-radius: 8px;
+      padding: 12px;
+    }
+
+    .deep-card strong {
+      display: block;
+      color: var(--text);
+      font-size: 13px;
+      margin-bottom: 5px;
+      text-transform: uppercase;
+    }
+
+    .mini-screen-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 14px;
+    }
+
+    .mini-screen {
+      border: 1px solid rgba(234, 133, 48, 0.24);
+      background:
+        linear-gradient(135deg, rgba(239, 246, 243, 0.05), transparent 42%),
+        #0b0f10;
+      border-radius: 8px;
+      padding: 10px;
+      min-height: 240px;
+      display: grid;
+      gap: 8px;
+      align-content: start;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .mini-screen::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: repeating-linear-gradient(0deg, rgba(255,255,255,0.02), rgba(255,255,255,0.02) 1px, transparent 1px, transparent 4px);
+      pointer-events: none;
+    }
+
+    .mini-screen > * {
+      position: relative;
+      z-index: 1;
+    }
+
+    .mini-shell {
+      display: grid;
+      grid-template-columns: 88px 1fr;
+      gap: 8px;
+    }
+
+    .mini-rail {
+      display: grid;
+      gap: 5px;
+      align-content: start;
+    }
+
+    .mini-rail span,
+    .mini-chip {
+      border: 1px solid var(--line-soft);
+      color: var(--muted);
+      background: rgba(239, 246, 243, 0.045);
+      border-radius: 5px;
+      padding: 6px;
+      font-size: 9px;
+      font-weight: 760;
+      text-transform: uppercase;
+    }
+
+    .mini-rail span.active,
+    .mini-chip.active {
+      color: var(--text);
+      border-color: var(--line);
+      background: var(--accent-soft);
+      box-shadow: inset 2px 0 0 var(--accent);
+    }
+
+    .mini-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      min-height: 31px;
+      align-items: center;
+      border: 1px solid var(--line-soft);
+      background: rgba(239, 246, 243, 0.05);
+      border-radius: 5px;
+      padding: 6px;
+      color: var(--text);
+      font-size: 10px;
+      font-weight: 730;
+      text-transform: uppercase;
+    }
+
+    .mini-row.selected {
+      border-color: var(--line);
+      background: rgba(234, 133, 48, 0.13);
+      box-shadow: inset 2px 0 0 var(--accent);
+    }
+
+    .mini-row em {
+      color: var(--accent-strong);
+      font-style: normal;
+      font-size: 9px;
+    }
+
+    .mini-action-row {
+      display: flex;
+      gap: 5px;
+      flex-wrap: wrap;
+      margin-top: 2px;
+    }
+
+    .mini-action {
+      border: 1px solid var(--line-soft);
+      border-radius: 5px;
+      background: rgba(239, 246, 243, 0.055);
+      color: var(--muted);
+      padding: 5px 7px;
+      font-size: 9px;
+      text-transform: uppercase;
+      font-weight: 760;
+    }
+
+    .mini-action.active {
+      color: var(--text);
+      border-color: var(--line);
+      background: var(--accent-soft);
+    }
+
+    .mini-action.danger {
+      color: #ffb8b4;
+      border-color: rgba(236, 90, 84, 0.38);
+      background: rgba(236, 90, 84, 0.12);
+    }
+
+    .mini-keyboard {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 4px;
+    }
+
+    .mini-key {
+      border: 1px solid var(--line-soft);
+      border-radius: 4px;
+      background: rgba(239, 246, 243, 0.055);
+      color: var(--text);
+      min-height: 24px;
+      display: grid;
+      place-items: center;
+      font-size: 10px;
+      font-weight: 760;
+    }
+
+    .mini-key.active {
+      color: var(--accent-strong);
+      border-color: var(--line);
+      background: var(--accent-soft);
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .flow-step {
+      border: 1px solid var(--line-soft);
+      background: rgba(239, 246, 243, 0.045);
+      border-radius: 8px;
+      padding: 10px;
+      min-height: 94px;
+    }
+
+    .flow-step span {
+      display: block;
+      color: var(--accent-strong);
+      font-size: 11px;
+      font-weight: 780;
+      text-transform: uppercase;
+      margin-bottom: 5px;
+    }
+
+    .control-screen-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 14px;
+    }
+
+    .wb-graph {
+      aspect-ratio: 1 / 1;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background:
+        linear-gradient(90deg, rgba(239,246,243,0.09) 1px, transparent 1px),
+        linear-gradient(0deg, rgba(239,246,243,0.09) 1px, transparent 1px),
+        radial-gradient(circle at 64% 40%, rgba(234,133,48,0.22), transparent 18%),
+        rgba(239,246,243,0.045);
+      background-size: 20% 20%, 20% 20%, auto, auto;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .wb-graph::before,
+    .wb-graph::after {
+      content: "";
+      position: absolute;
+      background: rgba(239,246,243,0.18);
+    }
+
+    .wb-graph::before {
+      left: 50%;
+      top: 0;
+      bottom: 0;
+      width: 1px;
+    }
+
+    .wb-graph::after {
+      top: 50%;
+      left: 0;
+      right: 0;
+      height: 1px;
+    }
+
+    .wb-point {
+      position: absolute;
+      left: 64%;
+      top: 40%;
+      width: 18px;
+      height: 18px;
+      border-radius: 99px;
+      border: 2px solid var(--text);
+      background: var(--accent);
+      transform: translate(-50%, -50%);
+      box-shadow: 0 0 22px rgba(234, 133, 48, 0.52);
+      z-index: 2;
+    }
+
+    .axis-label {
+      position: absolute;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 780;
+      text-transform: uppercase;
+      z-index: 2;
+    }
+
+    .axis-label.top { top: 8px; left: 50%; transform: translateX(-50%); }
+    .axis-label.bottom { bottom: 8px; left: 50%; transform: translateX(-50%); }
+    .axis-label.left { left: 8px; top: 50%; transform: translateY(-50%); }
+    .axis-label.right { right: 8px; top: 50%; transform: translateY(-50%); }
+
+    .slider {
+      height: 9px;
+      border-radius: 999px;
+      border: 1px solid var(--line-soft);
+      background: rgba(239,246,243,0.08);
+      position: relative;
+      margin: 8px 0;
+    }
+
+    .slider::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: var(--fill, 58%);
+      border-radius: inherit;
+      background: linear-gradient(90deg, rgba(234,133,48,0.35), var(--accent));
+    }
+
+    .slider::after {
+      content: "";
+      position: absolute;
+      left: var(--fill, 58%);
+      top: 50%;
+      width: 16px;
+      height: 16px;
+      border-radius: 99px;
+      transform: translate(-50%, -50%);
+      background: var(--text);
+      border: 3px solid var(--accent);
+    }
+
+    .curve-box {
+      aspect-ratio: 4 / 3;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background:
+        linear-gradient(90deg, rgba(239,246,243,0.08) 1px, transparent 1px),
+        linear-gradient(0deg, rgba(239,246,243,0.08) 1px, transparent 1px),
+        rgba(239,246,243,0.045);
+      background-size: 25% 25%;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .curve-line {
+      position: absolute;
+      left: 10%;
+      right: 10%;
+      top: 18%;
+      bottom: 18%;
+      border-left: 3px solid transparent;
+      border-bottom: 3px solid var(--accent);
+      border-radius: 0 0 60% 0;
+      transform: skew(-18deg);
+      filter: drop-shadow(0 0 10px rgba(234,133,48,0.45));
+    }
+
+    .matrix-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+    }
+
+    .matrix-cell {
+      min-height: 39px;
+      border: 1px solid var(--line-soft);
+      border-radius: 6px;
+      background: rgba(239,246,243,0.055);
+      display: grid;
+      place-items: center;
+      color: var(--accent-strong);
+      font-size: 12px;
+      font-weight: 780;
+    }
+
+    .matrix-cell.active {
+      border-color: var(--line);
+      background: var(--accent-soft);
+      color: var(--text);
+    }
+
+    @media (max-width: 920px) {
+      header,
+      .option-head,
+      .split,
+      .grid-a,
+      .grid-c,
+      .grid-d,
+      .rules,
+      .deep-layout,
+      .mini-screen-grid,
+      .flow,
+      .control-screen-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .camera {
+        min-height: 760px;
+        aspect-ratio: auto;
+      }
+
+      .grid-a .topbar,
+      .grid-c .topbar,
+      .grid-d .topbar {
+        grid-column: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>JPEG.CAM Menu System Options</h1>
+        <p class="lede">Each direction uses one shared pattern for every page: recipes, BIONZ matrix, creative modes, photo queue, networking, support, naming, delete confirmation, and editing states. The goal is predictable D-pad behavior and identical manager screens everywhere.</p>
+      </div>
+      <div class="tag">Orange theme only</div>
+    </header>
+
+    <section class="rules">
+      <div class="rule">
+        <h3>Shared Navigation</h3>
+        <p>Every screen has the same location, page tabs, selected row, value column, and action area.</p>
+      </div>
+      <div class="rule">
+        <h3>Shared Managers</h3>
+        <p>Recipe manager, BIONZ matrix, and queue editor use the same list, edit, rename, duplicate, and delete controls.</p>
+      </div>
+      <div class="rule">
+        <h3>Shared Naming</h3>
+        <p>Naming becomes a full-screen keyboard with text box, confirm, cancel, delete, and space keys.</p>
+      </div>
+      <div class="rule">
+        <h3>Shared Confirm</h3>
+        <p>Delete and overwrite actions use one modal style with the same confirm/cancel placement.</p>
+      </div>
+    </section>
+
+    <section class="option">
+      <div class="option-head">
+        <div>
+          <h2>Option A: Orange Rail</h2>
+          <p>A fixed left rail for top-level areas, a central row list for settings, and a right inspector for preview/actions. Best match for camera D-pad navigation.</p>
+        </div>
+        <div class="rating"><span>Best fit</span><span class="dot on"></span><span class="dot on"></span><span class="dot on"></span></div>
+      </div>
+      <div class="camera">
+        <div class="screen grid-a">
+          <div class="topbar">
+            <div class="brand">JPEG.CAM</div>
+            <div class="crumbs"><span>Menu</span><span>/</span><span class="badge">Recipes</span><span>/ Base</span></div>
+          </div>
+          <nav class="rail">
+            <div class="rail-item active">Recipes</div>
+            <div class="rail-item">Creative</div>
+            <div class="rail-item">Queue</div>
+            <div class="rail-item">Network</div>
+            <div class="rail-item">Support</div>
+          </nav>
+          <section class="content">
+            <div class="segments">
+              <div class="seg active">Base</div>
+              <div class="seg">Color</div>
+              <div class="seg">FX</div>
+              <div class="seg">Grain</div>
+              <div class="seg">Analog</div>
+            </div>
+            <div class="row selected"><div><div class="row-title">Recipe Slot</div><div class="row-sub">Same control in every manager</div></div><div class="value">03</div></div>
+            <div class="row"><div><div class="row-title">Name</div><div class="row-sub">Opens shared keyboard</div></div><div class="value">Portra 400</div></div>
+            <div class="row"><div><div class="row-title">Exposure Comp</div><div class="row-sub">Default per recipe</div></div><div class="value">-0.3 EV</div></div>
+            <div class="row"><div><div class="row-title">BIONZ Matrix</div><div class="row-sub">Same picker as matrix manager</div></div><div class="value">Golden Hour</div></div>
+            <div class="row"><div><div class="row-title">Queue Mode</div><div class="row-sub">Manual, 3 shot, 5 shot</div></div><div class="value">5 Shot</div></div>
+            <div class="row"><div><div class="row-title">Output Name</div><div class="row-sub">Recipe suffix enabled</div></div><div class="value">On</div></div>
+          </section>
+          <aside class="side">
+            <div class="preview">
+              <div class="mini-title"><span>Manager Pattern</span><span>Recipes</span></div>
+              <div class="thumb"></div>
+            </div>
+            <div class="preview">
+              <div class="mini-title"><span>BIONZ Matrix</span><span>Same UI</span></div>
+              <div class="row selected"><div><div class="row-title">Matrix 01</div><div class="row-sub">Rename/edit/delete</div></div><div class="value">Warm</div></div>
+              <div class="row"><div><div class="row-title">Matrix 02</div><div class="row-sub">Rename/edit/delete</div></div><div class="value">Cool</div></div>
+            </div>
+            <div class="actions">
+              <div class="button primary">Edit</div>
+              <div class="button">Rename</div>
+              <div class="button">Duplicate</div>
+              <div class="button danger">Delete</div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <section class="deep-dive">
+      <div class="option-head">
+        <div>
+          <h2>Option A Deep Dive: One System, Many Screens</h2>
+          <p>This is the expanded version of Orange Rail. The important rule is that every page uses the same shell: left rail for location, center rows for selection, right-side action/preview area when needed, full-screen naming, and one confirmation pattern.</p>
+        </div>
+        <div class="tag">Selected Direction</div>
+      </div>
+
+      <div class="deep-layout">
+        <section class="deep-stack">
+          <div class="deep-card">
+            <strong>Global Shell</strong>
+            <p>Every page starts with the same top bar and left rail. Recipes, creative modes, queue, network, support, and system settings no longer invent their own navigation shape.</p>
+          </div>
+          <div class="deep-card">
+            <strong>Shared Row Contract</strong>
+            <p>Rows always show label on the left and current value/status on the right. Press center to edit, left/right to adjust simple values, and back to cancel or return.</p>
+          </div>
+          <div class="deep-card">
+            <strong>Shared Manager Contract</strong>
+            <p>Recipes, BIONZ matrices, queue presets, and saved photo lists use the same actions: open, edit, rename, duplicate when useful, delete, confirm, cancel.</p>
+          </div>
+        </section>
+
+        <section class="mini-screen">
+          <div class="mini-title"><span>Main Menu Anatomy</span><span>Option A</span></div>
+          <div class="mini-shell">
+            <div class="mini-rail">
+              <span class="active">Recipes</span>
+              <span>Creative</span>
+              <span>Queue</span>
+              <span>Network</span>
+              <span>Support</span>
+            </div>
+            <div class="rows">
+              <div class="mini-row selected"><span>Page Tabs</span><em>Base</em></div>
+              <div class="mini-row"><span>Selected Row</span><em>Orange</em></div>
+              <div class="mini-row"><span>Value Column</span><em>Right</em></div>
+              <div class="mini-row"><span>Action Area</span><em>Shared</em></div>
+              <div class="mini-action-row">
+                <span class="mini-action active">Edit</span>
+                <span class="mini-action">Rename</span>
+                <span class="mini-action">Cancel</span>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="mini-screen-grid">
+        <section class="mini-screen">
+          <div class="mini-title"><span>Recipes</span><span>Manager</span></div>
+          <div class="mini-shell">
+            <div class="mini-rail">
+              <span class="active">Recipes</span>
+              <span>Creative</span>
+              <span>Queue</span>
+              <span>Network</span>
+            </div>
+            <div class="rows">
+              <div class="mini-row selected"><span>Portra 400</span><em>Active</em></div>
+              <div class="mini-row"><span>Cine Warm</span><em>Saved</em></div>
+              <div class="mini-row"><span>Night Soft</span><em>Saved</em></div>
+              <div class="mini-row"><span>Default EV</span><em>-0.3</em></div>
+              <div class="mini-action-row">
+                <span class="mini-action active">Open</span>
+                <span class="mini-action">Edit</span>
+                <span class="mini-action">Rename</span>
+                <span class="mini-action danger">Delete</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="mini-screen">
+          <div class="mini-title"><span>BIONZ Matrix</span><span>Same Manager</span></div>
+          <div class="mini-shell">
+            <div class="mini-rail">
+              <span>Recipes</span>
+              <span class="active">Settings</span>
+              <span>Queue</span>
+              <span>Network</span>
+            </div>
+            <div class="rows">
+              <div class="mini-row selected"><span>Golden Hour</span><em>Active</em></div>
+              <div class="mini-row"><span>Chrome Warm</span><em>Saved</em></div>
+              <div class="mini-row"><span>Neutral Soft</span><em>Saved</em></div>
+              <div class="mini-row"><span>Red Gain</span><em>1.04</em></div>
+              <div class="mini-action-row">
+                <span class="mini-action active">Save</span>
+                <span class="mini-action">Rename</span>
+                <span class="mini-action">Cancel</span>
+                <span class="mini-action danger">Delete</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="mini-screen">
+          <div class="mini-title"><span>Queue Editor</span><span>Manual / 3 / 5</span></div>
+          <div class="mini-shell">
+            <div class="mini-rail">
+              <span>Recipes</span>
+              <span>Creative</span>
+              <span class="active">Queue</span>
+              <span>Network</span>
+            </div>
+            <div class="rows">
+              <div class="mini-row selected"><span>Shot 01</span><em>Portra</em></div>
+              <div class="mini-row"><span>Shot 02</span><em>Cine</em></div>
+              <div class="mini-row"><span>Shot 03</span><em>Night</em></div>
+              <div class="mini-row"><span>Add Slot</span><em>+</em></div>
+              <div class="mini-action-row">
+                <span class="mini-action active">Move</span>
+                <span class="mini-action">Recipe</span>
+                <span class="mini-action">Clear</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="mini-screen">
+          <div class="mini-title"><span>Creative Modes</span><span>One List</span></div>
+          <div class="mini-shell">
+            <div class="mini-rail">
+              <span>Recipes</span>
+              <span class="active">Creative</span>
+              <span>Queue</span>
+              <span>Network</span>
+            </div>
+            <div class="rows">
+              <div class="mini-row selected"><span>Diptych</span><em>Ready</em></div>
+              <div class="mini-row"><span>Double Exposure</span><em>Overlay</em></div>
+              <div class="mini-row"><span>XPAN Crop</span><em>On</em></div>
+              <div class="mini-row"><span>Blend Preview</span><em>50%</em></div>
+              <div class="mini-action-row">
+                <span class="mini-action active">Select</span>
+                <span class="mini-action">Settings</span>
+                <span class="mini-action">Back</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="mini-screen">
+          <div class="mini-title"><span>Network Photos</span><span>Delete Included</span></div>
+          <div class="mini-shell">
+            <div class="mini-rail">
+              <span>Recipes</span>
+              <span>Queue</span>
+              <span class="active">Network</span>
+              <span>Support</span>
+            </div>
+            <div class="rows">
+              <div class="mini-action-row">
+                <span class="mini-chip active">Graded Photos</span>
+                <span class="mini-chip">Original Photos</span>
+              </div>
+              <div class="mini-row selected"><span>DSC01070_Portra</span><em>View</em></div>
+              <div class="mini-row"><span>DSC01069_Cine</span><em>View</em></div>
+              <div class="mini-row"><span>Selected Photo</span><em>1/24</em></div>
+              <div class="mini-action-row">
+                <span class="mini-action active">Open</span>
+                <span class="mini-action">Download</span>
+                <span class="mini-action danger">Delete</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="mini-screen">
+          <div class="mini-title"><span>Full-Screen Naming</span><span>Keyboard</span></div>
+          <div class="text-input" style="font-size:13px;margin:0">PORTRA 400</div>
+          <div class="mini-keyboard">
+            <span class="mini-key active">A</span><span class="mini-key">B</span><span class="mini-key">C</span><span class="mini-key">D</span><span class="mini-key">E</span><span class="mini-key">F</span><span class="mini-key">G</span>
+            <span class="mini-key">H</span><span class="mini-key">I</span><span class="mini-key">J</span><span class="mini-key">K</span><span class="mini-key">L</span><span class="mini-key">M</span><span class="mini-key">N</span>
+            <span class="mini-key">O</span><span class="mini-key">P</span><span class="mini-key">Q</span><span class="mini-key">R</span><span class="mini-key">S</span><span class="mini-key">T</span><span class="mini-key">U</span>
+            <span class="mini-key">V</span><span class="mini-key">W</span><span class="mini-key">X</span><span class="mini-key">Y</span><span class="mini-key">Z</span><span class="mini-key">0</span><span class="mini-key">1</span>
+            <span class="mini-key">2</span><span class="mini-key">3</span><span class="mini-key">4</span><span class="mini-key">5</span><span class="mini-key">6</span><span class="mini-key">7</span><span class="mini-key">8</span>
+          </div>
+          <div class="mini-action-row">
+            <span class="mini-action active">Confirm</span>
+            <span class="mini-action">Cancel</span>
+            <span class="mini-action">Space</span>
+            <span class="mini-action">Delete</span>
+          </div>
+        </section>
+      </div>
+
+      <div class="flow">
+        <div class="flow-step"><span>1. Open</span><p>Left rail selects a category. Center rows always become the active work area.</p></div>
+        <div class="flow-step"><span>2. Select</span><p>Orange row highlight means the D-pad center button will act on that exact item.</p></div>
+        <div class="flow-step"><span>3. Edit</span><p>Simple values adjust inline. Complex values open the same focused edit screen.</p></div>
+        <div class="flow-step"><span>4. Confirm</span><p>Save/delete/overwrite all use the same footer or modal placement.</p></div>
+        <div class="flow-step"><span>5. Back</span><p>Back always cancels a transient state first, then returns one level up.</p></div>
+      </div>
+    </section>
+
+    <section class="deep-dive">
+      <div class="option-head">
+        <div>
+          <h2>Option A Deep Settings: Focused Editors</h2>
+          <p>These examples are limited to existing JPEG.CAM profile/settings surfaces or items already requested for this project. The menu keeps the same Orange Rail structure, but the selected page can become a focused editor when the existing setting is more visual than a plain row.</p>
+        </div>
+        <div class="tag">Existing Controls Only</div>
+      </div>
+
+      <div class="control-screen-grid">
+        <section class="mini-screen">
+          <div class="mini-title"><span>WB Shift Graph</span><span>A/B: +2 / G/M: -1</span></div>
+          <div class="mini-shell">
+            <div class="mini-rail">
+              <span>Recipes</span>
+              <span class="active">Color</span>
+              <span>FX</span>
+              <span>Grain</span>
+            </div>
+            <div class="rows">
+              <div class="wb-graph">
+                <span class="axis-label top">G</span>
+                <span class="axis-label bottom">M</span>
+                <span class="axis-label left">B</span>
+                <span class="axis-label right">A</span>
+                <span class="wb-point"></span>
+              </div>
+              <div class="mini-row selected"><span>Amber / Blue</span><em>+2</em></div>
+              <div class="mini-row"><span>Green / Magenta</span><em>-1</em></div>
+              <div class="mini-action-row">
+                <span class="mini-action active">Apply</span>
+                <span class="mini-action">Reset</span>
+                <span class="mini-action">Cancel</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="mini-screen">
+          <div class="mini-title"><span>BIONZ Matrix Tuning</span><span>3x3 Editor</span></div>
+          <div class="mini-shell">
+            <div class="mini-rail">
+              <span>Recipes</span>
+              <span class="active">Matrix</span>
+              <span>Queue</span>
+              <span>Network</span>
+            </div>
+            <div class="rows">
+              <div class="matrix-grid">
+                <span class="matrix-cell active">1.04</span>
+                <span class="matrix-cell">0.01</span>
+                <span class="matrix-cell">-0.02</span>
+                <span class="matrix-cell">0.00</span>
+                <span class="matrix-cell">0.98</span>
+                <span class="matrix-cell">0.02</span>
+                <span class="matrix-cell">-0.01</span>
+                <span class="matrix-cell">0.03</span>
+                <span class="matrix-cell">0.92</span>
+              </div>
+              <div class="mini-row selected"><span>Selected Cell</span><em>R to R</em></div>
+              <div class="mini-row"><span>Step Size</span><em>0.01</em></div>
+              <div class="mini-action-row">
+                <span class="mini-action active">Save</span>
+                <span class="mini-action">Rename</span>
+                <span class="mini-action">Cancel</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="mini-screen">
+          <div class="mini-title"><span>Recipe Color Page</span><span>Existing Fields</span></div>
+          <div class="mini-shell">
+            <div class="mini-rail">
+              <span class="active">Recipes</span>
+              <span>Creative</span>
+              <span>Queue</span>
+              <span>Network</span>
+            </div>
+            <div class="rows">
+              <div class="mini-row"><span>White Balance</span><em>Auto</em></div>
+              <div class="slider" style="--fill:62%"></div>
+              <div class="mini-row selected"><span>WB Shift G/M</span><em>-3</em></div>
+              <div class="slider" style="--fill:43%"></div>
+              <div class="mini-row"><span>Saturation</span><em>+6</em></div>
+              <div class="slider" style="--fill:66%"></div>
+              <div class="mini-action-row">
+                <span class="mini-action active">Set</span>
+                <span class="mini-action">Reset Row</span>
+                <span class="mini-action">Back</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="mini-screen">
+          <div class="mini-title"><span>Shading + Color Depth</span><span>Existing Fields</span></div>
+          <div class="mini-shell">
+            <div class="mini-rail">
+              <span>Base</span>
+              <span>Color</span>
+              <span class="active">Analog</span>
+              <span>Grain</span>
+            </div>
+            <div class="rows">
+              <div class="mini-row selected"><span>Shading Red</span><em>+2</em></div>
+              <div class="slider" style="--fill:58%"></div>
+              <div class="mini-row"><span>Shading Blue</span><em>-1</em></div>
+              <div class="slider" style="--fill:46%"></div>
+              <div class="mini-row"><span>Color Depth Red</span><em>+1</em></div>
+              <div class="mini-row"><span>Color Depth Blue</span><em>-2</em></div>
+              <div class="mini-action-row">
+                <span class="mini-action active">Apply</span>
+                <span class="mini-action">Reset Row</span>
+                <span class="mini-action">Cancel</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="mini-screen">
+          <div class="mini-title"><span>Exposure Defaults</span><span>Per Recipe</span></div>
+          <div class="mini-shell">
+            <div class="mini-rail">
+              <span class="active">Recipes</span>
+              <span>Color</span>
+              <span>FX</span>
+              <span>Analog</span>
+            </div>
+            <div class="rows">
+              <div class="mini-row selected"><span>Default EV Comp</span><em>-0.3</em></div>
+              <div class="slider" style="--fill:46%"></div>
+              <div class="mini-row"><span>Apply On Switch</span><em>On</em></div>
+              <div class="mini-row"><span>Restore Previous</span><em>Off</em></div>
+              <div class="mini-action-row">
+                <span class="mini-action active">Save</span>
+                <span class="mini-action">Cancel</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="mini-screen">
+          <div class="mini-title"><span>Delete Confirmation</span><span>Same Everywhere</span></div>
+          <div class="mini-shell">
+            <div class="mini-rail">
+              <span>Recipes</span>
+              <span>Matrix</span>
+              <span class="active">Network</span>
+              <span>Queue</span>
+            </div>
+            <div class="rows">
+              <div class="deep-card" style="padding:10px">
+                <strong style="font-size:11px">Delete DSC01070_Portra?</strong>
+                <p style="font-size:11px">This uses the same modal for SD card photos, recipes, matrices, and queue slots.</p>
+              </div>
+              <div class="mini-action-row">
+                <span class="mini-action danger">Delete</span>
+                <span class="mini-action active">Cancel</span>
+              </div>
+              <div class="mini-row selected"><span>Back Button</span><em>Cancel</em></div>
+              <div class="mini-row"><span>Center Button</span><em>Confirm</em></div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <section class="option">
+      <div class="option-head">
+        <div>
+          <h2>Option B: Stacked Tabs</h2>
+          <p>Top-level areas sit across the top with secondary tabs below. It feels close to the current app, but makes every page use the same rows and action footer.</p>
+        </div>
+        <div class="rating"><span>Familiar</span><span class="dot on"></span><span class="dot on"></span><span class="dot"></span></div>
+      </div>
+      <div class="camera">
+        <div class="screen grid-b">
+          <div class="topbar">
+            <div class="brand">JPEG.CAM</div>
+            <div class="crumbs"><span class="badge">D-pad</span><span>Rows + footer actions</span></div>
+          </div>
+          <div class="tabs">
+            <div class="tab active">Recipes</div>
+            <div class="tab">Creative</div>
+            <div class="tab">Queue</div>
+            <div class="tab">Network</div>
+            <div class="tab">Support</div>
+          </div>
+          <div class="segments">
+            <div class="seg active">Library</div>
+            <div class="seg">Base</div>
+            <div class="seg">Color</div>
+            <div class="seg">FX</div>
+            <div class="seg">Grain</div>
+          </div>
+          <div class="split">
+            <section class="rows">
+              <div class="row selected"><div><div class="row-title">Portra 400</div><div class="row-sub">Recipe 03</div></div><div class="value">Active</div></div>
+              <div class="row"><div><div class="row-title">Cine Warm</div><div class="row-sub">Recipe 04</div></div><div class="value">Saved</div></div>
+              <div class="row"><div><div class="row-title">BIONZ Matrices</div><div class="row-sub">Uses identical library screen</div></div><div class="value">Open</div></div>
+              <div class="row"><div><div class="row-title">Photo Queue</div><div class="row-sub">Manual, 3 shot, 5 shot</div></div><div class="value">Edit</div></div>
+              <div class="row"><div><div class="row-title">Network Photos</div><div class="row-sub">Graded first, originals second</div></div><div class="value">Browse</div></div>
+            </section>
+            <aside class="keyboard-panel">
+              <div class="mini-title"><span>Rename Recipe</span><span>Cancel available</span></div>
+              <div class="text-input">PORTRA 400</div>
+              <div class="keyboard">
+                <div class="key active">A</div><div class="key">B</div><div class="key">C</div><div class="key">D</div><div class="key">E</div><div class="key">F</div><div class="key">G</div><div class="key">H</div><div class="key">I</div><div class="key">J</div>
+                <div class="key">K</div><div class="key">L</div><div class="key">M</div><div class="key">N</div><div class="key">O</div><div class="key">P</div><div class="key">Q</div><div class="key">R</div><div class="key">S</div><div class="key">T</div>
+                <div class="key">U</div><div class="key">V</div><div class="key">W</div><div class="key">X</div><div class="key">Y</div><div class="key">Z</div><div class="key">0</div><div class="key">1</div><div class="key">2</div><div class="key">3</div>
+              </div>
+              <div class="actions" style="margin-top:10px">
+                <div class="button primary">Confirm</div>
+                <div class="button">Cancel</div>
+                <div class="button">Delete</div>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="option">
+      <div class="option-head">
+        <div>
+          <h2>Option C: Command Shelf</h2>
+          <p>Every page has a large selected item area and a permanent command shelf. It is fast to operate, but uses more screen space than Option A.</p>
+        </div>
+        <div class="rating"><span>Fast actions</span><span class="dot on"></span><span class="dot on"></span><span class="dot"></span></div>
+      </div>
+      <div class="camera">
+        <div class="screen grid-c">
+          <div class="topbar">
+            <div class="brand">JPEG.CAM</div>
+            <div class="crumbs"><span>Creative</span><span>/</span><span class="badge">Double Exposure</span></div>
+          </div>
+          <section class="cards">
+            <div class="card selected"><div><h3>Diptych</h3><p>Same mode card shape everywhere. Press center to edit.</p></div><div class="value">Enabled</div></div>
+            <div class="card"><div><h3>Double Exposure</h3><p>Half-opacity overlay after first shot.</p></div><div class="value">Ready</div></div>
+            <div class="card"><div><h3>XPAN Crop</h3><p>Consistent setting rows below selected mode.</p></div><div class="value">Off</div></div>
+            <div class="card"><div><h3>Queue Editor</h3><p>Manual, 3 shot, and 5 shot share the same editor.</p></div><div class="value">Open</div></div>
+            <div class="card"><div><h3>BIONZ Matrix</h3><p>Identical save, rename, delete, cancel behavior.</p></div><div class="value">Manage</div></div>
+            <div class="card"><div><h3>Networking</h3><p>Graded Photos first, Original Photos second.</p></div><div class="value">Browse</div></div>
+          </section>
+          <aside class="side">
+            <div class="preview">
+              <div class="mini-title"><span>Command Shelf</span><span>Always same</span></div>
+              <div class="actions">
+                <div class="button primary">Open</div>
+                <div class="button">Edit</div>
+                <div class="button">Rename</div>
+                <div class="button danger">Delete</div>
+              </div>
+            </div>
+            <div class="preview">
+              <div class="mini-title"><span>Selected Settings</span><span>Rows</span></div>
+              <div class="row selected"><div><div class="row-title">Blend</div><div class="row-sub">Screen overlay preview</div></div><div class="value">50%</div></div>
+              <div class="row"><div><div class="row-title">Save Original</div><div class="row-sub">Before grade</div></div><div class="value">On</div></div>
+              <div class="row"><div><div class="row-title">Processing Log</div><div class="row-sub">Speed only</div></div><div class="value">On</div></div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <section class="option">
+      <div class="option-head">
+        <div>
+          <h2>Option D: Library + Inspector</h2>
+          <p>A consistent manager UI for all saved objects. The left side chooses a saved item; the right side edits it. Powerful, but denser than the others.</p>
+        </div>
+        <div class="rating"><span>Most structured</span><span class="dot on"></span><span class="dot on"></span><span class="dot on"></span></div>
+      </div>
+      <div class="camera">
+        <div class="screen grid-d">
+          <div class="topbar">
+            <div class="brand">JPEG.CAM</div>
+            <div class="crumbs"><span class="badge">BIONZ Matrix</span><span>Library + Inspector</span></div>
+          </div>
+          <section class="list">
+            <div class="row selected"><div><div class="row-title">Golden Hour</div><div class="row-sub">Matrix 01</div></div><div class="value">Active</div></div>
+            <div class="row"><div><div class="row-title">Chrome Warm</div><div class="row-sub">Matrix 02</div></div><div class="value">Saved</div></div>
+            <div class="row"><div><div class="row-title">Neutral Soft</div><div class="row-sub">Matrix 03</div></div><div class="value">Saved</div></div>
+            <div class="row"><div><div class="row-title">Portra 400</div><div class="row-sub">Recipe manager uses same screen</div></div><div class="value">Recipe</div></div>
+            <div class="row"><div><div class="row-title">5 Shot Queue</div><div class="row-sub">Queue manager uses same screen</div></div><div class="value">Queue</div></div>
+          </section>
+          <section class="inspector">
+            <div class="mini-title"><span>Inspector</span><span>Editable</span></div>
+            <div class="row selected"><div><div class="row-title">Name</div><div class="row-sub">Full-screen keyboard</div></div><div class="value">Golden Hour</div></div>
+            <div class="row"><div><div class="row-title">Red Gain</div><div class="row-sub">Matrix row value</div></div><div class="value">1.04</div></div>
+            <div class="row"><div><div class="row-title">Green Gain</div><div class="row-sub">Matrix row value</div></div><div class="value">0.98</div></div>
+            <div class="row"><div><div class="row-title">Blue Gain</div><div class="row-sub">Matrix row value</div></div><div class="value">0.92</div></div>
+            <div class="actions">
+              <div class="button primary">Save</div>
+              <div class="button">Cancel</div>
+              <div class="button">Duplicate</div>
+              <div class="button danger">Delete</div>
+            </div>
+          </section>
+          <div class="modal">
+            <h3>Confirm Delete</h3>
+            <p style="margin:7px 0 12px">Same confirmation layout for recipes, matrices, queue photos, and network deletes.</p>
+            <div class="actions">
+              <div class="button danger">Delete</div>
+              <div class="button primary">Cancel</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <table class="compare">
+      <thead>
+        <tr>
+          <th>Option</th>
+          <th>Best Use</th>
+          <th>Tradeoff</th>
+          <th>Android Translation</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Option A</td>
+          <td>Best overall for a complete camera menu overhaul. It keeps navigation obvious and manager screens identical.</td>
+          <td>More visual structure than the current menu, so it needs a full `MenuController` rendering pass.</td>
+          <td>Left category rail, central shared row renderer, right shared inspector/action panel.</td>
+        </tr>
+        <tr>
+          <td>Option B</td>
+          <td>Best if you want the least disruptive change from the current tab style.</td>
+          <td>Top tabs can get crowded as features grow.</td>
+          <td>Reuse existing header tabs but replace every page body with shared manager rows.</td>
+        </tr>
+        <tr>
+          <td>Option C</td>
+          <td>Best for fast action access and creative mode browsing.</td>
+          <td>Cards are less efficient for long settings pages.</td>
+          <td>Mode grid plus a persistent command shelf and shared row editor.</td>
+        </tr>
+        <tr>
+          <td>Option D</td>
+          <td>Best for saved-object managers like recipes, matrices, queues, and photo libraries.</td>
+          <td>Dense on a small camera display, less ideal as the global menu shell.</td>
+          <td>Library list plus inspector panel for all saved item types.</td>
+        </tr>
+      </tbody>
+    </table>
+  </main>
+</body>
+</html>

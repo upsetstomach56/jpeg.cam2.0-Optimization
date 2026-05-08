@@ -71,6 +71,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     private ProcessingQueueManager.Entry activeQueueEntry;
     private boolean processingQueueActive = false;
     private boolean manualQueueProcessRequested = false;
+    private boolean pendingQueueProcessManual = false;
     private int activeQueueMode = ProcessingQueueManager.MODE_AUTO;
     private int processingQueueTotal = 0;
     private int processingQueueCompleted = 0;
@@ -127,8 +128,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 
     private boolean prefShowCinemaMattes = false;
     private boolean prefShowGridLines = false;
+    private boolean prefLiveViewMonochrome = false;
     private int prefJpegQuality = 95;
+    private int appTheme = UiTheme.THEME_ORANGE;
     private int processingFrequency = 1;
+    private boolean liveViewMonochromeSuspended = false;
     private DiptychManager diptychManager;
 
     private LensProfileManager lensManager;
@@ -363,7 +367,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         prefShowFocusMeter = prefs.getBoolean("focusMeter", false); // CHANGED: Default OFF
         prefShowCinemaMattes = prefs.getBoolean("cinemaMattes", false);
         prefShowGridLines = prefs.getBoolean("gridLines", true);
+        prefLiveViewMonochrome = prefs.getBoolean("liveViewMonochrome", false);
         prefJpegQuality = prefs.getInt("jpegQuality", 95);
+        appTheme = UiTheme.normalizeThemeIndex(prefs.getInt("appTheme", UiTheme.THEME_ORANGE));
+        UiTheme.setTheme(appTheme);
         processingFrequency = normalizeProcessingFrequency(prefs.getInt("processingFrequency", 1));
         boolean prefShowDiptych = prefs.getBoolean("diptychEnabled", false);
         boolean prefShowDoubleExposure = prefs.getBoolean("doubleExposureEnabled", false);
@@ -425,7 +432,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     private void setupEngines() {
         mProcessor = new ImageProcessor(this, new ImageProcessor.ProcessorCallback() {
             @Override public void onPreloadStarted() { isReady = false; runOnUiThread(new Runnable() { public void run() { updateMainHUD(); } }); }
-            @Override public void onPreloadFinished(boolean success) { isReady = true; runOnUiThread(new Runnable() { public void run() { updateMainHUD(); if (manualQueueProcessRequested) startQueuedProcessing(true, pendingQueueProcessTargetCount); else maybeAutoProcessQueuedPhotos(); } }); }
+            @Override public void onPreloadFinished(boolean success) { isReady = true; runOnUiThread(new Runnable() { public void run() { updateMainHUD(); if (manualQueueProcessRequested) startQueuedProcessing(pendingQueueProcessManual, pendingQueueProcessTargetCount); else maybeAutoProcessQueuedPhotos(); } }); }
             @Override public void onProcessStarted() { runOnUiThread(new Runnable() { public void run() { if (tvTopStatus != null) { tvTopStatus.setText(getProcessingStatusText()); tvTopStatus.setTextColor(UiTheme.WARN); } } }); }
         @Override public void onProcessFinished(String res) {
             if (processingQueueActive) {
@@ -556,15 +563,21 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 
     private void startQueuedProcessing(boolean manual, int targetCount) {
         int requestedMode = manual ? ProcessingQueueManager.MODE_MANUAL : ProcessingQueueManager.MODE_AUTO;
-        if (manual) manualQueueProcessRequested = true;
         if (mProcessor == null || processingQueueManager == null || processingQueueManager.getCountForMode(requestedMode) == 0) {
             manualQueueProcessRequested = false;
+            pendingQueueProcessManual = false;
             pendingQueueProcessTargetCount = 0;
             return;
         }
-        if (manual && targetCount > 0) pendingQueueProcessTargetCount = targetCount;
-        if (isProcessing || processingQueueActive || !isReady) return;
+        if (targetCount > 0) pendingQueueProcessTargetCount = targetCount;
+        if (isProcessing || processingQueueActive) return;
+        if (!isReady) {
+            manualQueueProcessRequested = true;
+            pendingQueueProcessManual = manual;
+            return;
+        }
         manualQueueProcessRequested = false;
+        pendingQueueProcessManual = false;
         if (targetCount <= 0) targetCount = pendingQueueProcessTargetCount;
         pendingQueueProcessTargetCount = 0;
         processingQueueActive = true;
@@ -622,6 +635,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             processingQueueStartedMs = 0;
             processingQueueAverageMs = 0;
             pendingQueueProcessTargetCount = 0;
+            pendingQueueProcessManual = false;
             activeQueueMode = ProcessingQueueManager.MODE_AUTO;
             isProcessing = false;
             runOnUiThread(new Runnable() { public void run() { if (tvTopStatus != null) { tvTopStatus.setTextColor(UiTheme.TEXT); } updateMainHUD(); } });
@@ -636,6 +650,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         processingQueueStartedMs = 0;
         processingQueueAverageMs = 0;
         pendingQueueProcessTargetCount = 0;
+        pendingQueueProcessManual = false;
         activeQueueMode = ProcessingQueueManager.MODE_AUTO;
         isProcessing = false;
         triggerLutPreload();
@@ -651,7 +666,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         }
 
         final File f = new File(path);
-        if (!f.exists()) return;
+        if (!f.exists()) {
+            restoreLiveViewMonochromeAfterCapture();
+            return;
+        }
 
         captureWritePending = true;
         isProcessing = true;
@@ -668,6 +686,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                     pendingShotSnapshot = null;
                     captureWritePending = false;
                     isProcessing = false;
+                    restoreLiveViewMonochromeAfterCapture();
                     updateMainHUD();
                     return;
                 }
@@ -699,6 +718,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                     } else {
                         pendingShotSnapshot = null;
                         isProcessing = false;
+                        restoreLiveViewMonochromeAfterCapture();
                         updateMainHUD();
                     }
                 }
@@ -728,26 +748,31 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 
     private void handleReadyPhotoFile(File f, String path, ProcessingQueueManager.Entry entry,
                                       long scannerStartedMs, long detectedMs, long stableMs, int scannerAttempts) {
-        // --- DIPTYCH INTERCEPT ---
-        if (diptychManager != null && diptychManager.interceptNewFile(f.getName(), path)) {
-            if (diptychManager.getState() == DiptychManager.STATE_PROCESSING_FIRST) {
-                diptychManager.processFirstShot(path);
-            } else if (diptychManager.getState() == DiptychManager.STATE_STITCHING) {
-                diptychManager.processSecondShot(diptychManager.getLeftFilename(), path, entry, scannerStartedMs, detectedMs, stableMs, scannerAttempts);
+        try {
+            // --- DIPTYCH INTERCEPT ---
+            if (diptychManager != null && diptychManager.interceptNewFile(f.getName(), path)) {
+                if (diptychManager.getState() == DiptychManager.STATE_PROCESSING_FIRST) {
+                    diptychManager.processFirstShot(path);
+                } else if (diptychManager.getState() == DiptychManager.STATE_STITCHING) {
+                    diptychManager.processSecondShot(diptychManager.getLeftFilename(), path, entry, scannerStartedMs, detectedMs, stableMs, scannerAttempts);
+                }
+                return;
+            } else if (shouldQueueReadyPhoto(entry)) {
+                if (processingQueueManager != null) {
+                    entry.queueMode = currentQueueMode();
+                    processingQueueManager.add(entry);
+                }
+                isProcessing = false;
+                updateMainHUD();
+                maybeAutoProcessQueuedPhotos();
+            } else {
+                File outDir = Filepaths.getGradedDir();
+                mProcessor.processJpeg(path, outDir.getAbsolutePath(), entry.qualityIndex, entry.jpegQuality, entry.profile, entry.applyCrop, false,
+                        entry.lutPath, entry.lutName,
+                        scannerStartedMs, detectedMs, stableMs, scannerAttempts);
             }
-            return;
-        } else if (shouldQueueReadyPhoto(entry)) {
-            if (processingQueueManager != null) {
-                processingQueueManager.add(entry);
-            }
-            isProcessing = false;
-            updateMainHUD();
-            maybeAutoProcessQueuedPhotos();
-        } else {
-            File outDir = Filepaths.getGradedDir();
-            mProcessor.processJpeg(path, outDir.getAbsolutePath(), entry.qualityIndex, entry.jpegQuality, entry.profile, entry.applyCrop, false,
-                    entry.lutPath, entry.lutName,
-                    scannerStartedMs, detectedMs, stableMs, scannerAttempts);
+        } finally {
+            restoreLiveViewMonochromeAfterCapture();
         }
     }
 
@@ -758,6 +783,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 
         if (shouldQueuePhotos()) {
             if (processingQueueManager != null) {
+                entry.queueMode = currentQueueMode();
                 processingQueueManager.add(entry);
             }
             isProcessing = false;
@@ -828,8 +854,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 
     private boolean shouldQueueReadyPhoto(ProcessingQueueManager.Entry entry) {
         if (diptychManager != null && diptychManager.isEnabled()) return false;
-        if (entry != null && entry.queueMode == ProcessingQueueManager.MODE_MANUAL) return true;
-        return processingFrequency > 1;
+        return processingFrequency == PROCESSING_FREQUENCY_MANUAL || processingFrequency > 1;
     }
 
     private void refreshRecipes() {
@@ -921,6 +946,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                     if (token == captureWriteToken && !isProcessing && pendingShotSnapshot != null) {
                         pendingShotSnapshot = null;
                         captureWritePending = false;
+                        restoreLiveViewMonochromeAfterCapture();
                         updateMainHUD();
                     }
                 }
@@ -1341,7 +1367,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         ed.putBoolean("focusMeter",    prefShowFocusMeter);
         ed.putBoolean("cinemaMattes",  prefShowCinemaMattes);
         ed.putBoolean("gridLines",     prefShowGridLines);
+        ed.putBoolean("liveViewMonochrome", prefLiveViewMonochrome);
         ed.putInt("jpegQuality",       prefJpegQuality);
+        ed.putInt("appTheme",          appTheme);
         ed.putInt("processingFrequency", processingFrequency);
         ed.putBoolean("diptychEnabled", isPrefDiptych());
         ed.putBoolean("doubleExposureEnabled", isPrefDoubleExposure());
@@ -1705,9 +1733,42 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     private void applyHardwareRecipe() {
         if (cameraManager == null || cameraManager.getCamera() == null) return;
         HardwareRecipeApplier.apply(cameraManager.getCamera(), recipeManager.getCurrentProfile());
+        if (!liveViewMonochromeSuspended) applyLiveViewMonochromeToCamera(prefLiveViewMonochrome);
     }
 
     // getWbString() removed — logic consolidated into HardwareRecipeApplier.
+
+    private void applyLiveViewMonochromeToCamera(boolean enabled) {
+        if (cameraManager == null || cameraManager.getCamera() == null) return;
+        try {
+            Camera c = cameraManager.getCamera();
+            Camera.Parameters p = c.getParameters();
+            List<String> effects = p.getSupportedColorEffects();
+            if (effects == null || effects.isEmpty()) return;
+
+            String target = enabled ? Camera.Parameters.EFFECT_MONO : Camera.Parameters.EFFECT_NONE;
+            if (!effects.contains(target)) return;
+            String current = p.getColorEffect();
+            if (target.equals(current)) return;
+
+            p.setColorEffect(target);
+            c.setParameters(p);
+        } catch (Throwable t) {
+            Log.e("JPEG.CAM", "Failed to update live view monochrome", t);
+        }
+    }
+
+    private void prepareLiveViewMonochromeForCapture() {
+        if (!prefLiveViewMonochrome) return;
+        liveViewMonochromeSuspended = true;
+        applyLiveViewMonochromeToCamera(false);
+    }
+
+    private void restoreLiveViewMonochromeAfterCapture() {
+        if (!liveViewMonochromeSuspended) return;
+        liveViewMonochromeSuspended = false;
+        applyLiveViewMonochromeToCamera(prefLiveViewMonochrome);
+    }
 
     private void setAutoPowerOffMode(boolean enable) {
         String mode = enable ? "APO/NORMAL" : "APO/NO";
@@ -1894,7 +1955,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         if (tv == null) return;
         if (selected) {
             UiTheme.selected(tv, UiTheme.ACCENT);
-            tv.setTextColor(editing ? UiTheme.WARN : UiTheme.TEXT);
+            tv.setTextColor(editing ? UiTheme.WARN : UiTheme.TEXT_ON_ACCENT);
             tv.setShadowLayer(2, 0, 0, UiTheme.SHADOW);
         } else {
             UiTheme.actionPanel(tv, UiTheme.ACCENT, false, true);
@@ -1957,6 +2018,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 
         if (shouldBlockShutterInput() && isShutterInput(sc, k)) return true;
         if (isFullShutterInput(sc, k) && (e == null || e.getRepeatCount() == 0)) {
+            prepareLiveViewMonochromeForCapture();
             armFileScanner(true);
         }
 
@@ -2038,6 +2100,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 
         if (cameraManager != null && cameraManager.getCamera() != null) {
             try {
+                applyLiveViewMonochromeToCamera(false);
                 Camera c = cameraManager.getCamera();
                 Camera.Parameters p = c.getParameters();
 
@@ -2504,7 +2567,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     @Override public boolean isPrefFocusMeter()   { return prefShowFocusMeter; }
     @Override public boolean isPrefCinemaMattes() { return prefShowCinemaMattes; }
     @Override public boolean isPrefGridLines()    { return prefShowGridLines; }
+    @Override public boolean isPrefLiveViewMonochrome() { return prefLiveViewMonochrome; }
     @Override public int     getPrefJpegQuality() { return prefJpegQuality; }
+    @Override public int     getAppTheme()        { return appTheme; }
     @Override public boolean isPrefDiptych()      { return diptychManager != null && diptychManager.isEnabled() && diptychManager.getMode() == DiptychManager.MODE_DIPTYCH; } // <--- ADDED
     @Override public boolean isPrefDoubleExposure() { return diptychManager != null && diptychManager.isEnabled() && diptychManager.getMode() == DiptychManager.MODE_DOUBLE_EXPOSURE; }
     @Override public int     getProcessingFrequency() { return processingFrequency; }
@@ -2523,8 +2588,25 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     @Override public void    setPrefFocusMeter(boolean v)   { prefShowFocusMeter   = v; }
     @Override public void    setPrefCinemaMattes(boolean v) { prefShowCinemaMattes = v; }
     @Override public void    setPrefGridLines(boolean v)    { prefShowGridLines    = v; }
+    @Override public void    setPrefLiveViewMonochrome(boolean v) {
+        prefLiveViewMonochrome = v;
+        liveViewMonochromeSuspended = false;
+        applyLiveViewMonochromeToCamera(v);
+        saveAppPreferences();
+    }
     @Override public void    setPrefJpegQuality(int v)      { prefJpegQuality      = v; }
-    @Override public void    setProcessingFrequency(int v)   { processingFrequency = normalizeProcessingFrequency(v); saveAppPreferences(); updateMainHUD(); }
+    @Override public void    setAppTheme(int v) {
+        appTheme = UiTheme.normalizeThemeIndex(v);
+        UiTheme.setTheme(appTheme);
+        saveAppPreferences();
+        updateMainHUD();
+    }
+    @Override public void    setProcessingFrequency(int v)   {
+        processingFrequency = normalizeProcessingFrequency(v);
+        if (!captureWritePending && !isProcessing) pendingShotSnapshot = null;
+        saveAppPreferences();
+        updateMainHUD();
+    }
     private void resetDiptychFocusAreas() {
         if (cameraManager == null || cameraManager.getCamera() == null) return;
         try {

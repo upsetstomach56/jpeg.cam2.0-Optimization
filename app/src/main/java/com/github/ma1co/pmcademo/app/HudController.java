@@ -124,14 +124,15 @@ public class HudController {
         header = new LinearLayout(ctx);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(10, 8, 10, 0);
+        header.setPadding(12, 7, 12, 7);
+        UiTheme.titlePanel(header, UiTheme.ACCENT);
         header.setVisibility(View.GONE);
 
         headerBack = new TextView(ctx);
         headerBack.setText("BACK");
         headerBack.setGravity(Gravity.CENTER);
         headerBack.setPadding(14, 7, 14, 7);
-        UiTheme.applyStatusText(headerBack, 13, font);
+        UiTheme.applyStatusText(headerBack, 12, font);
         LinearLayout.LayoutParams backLp = new LinearLayout.LayoutParams(96, -2);
         backLp.setMargins(0, 0, 12, 0);
         header.addView(headerBack, backLp);
@@ -139,7 +140,7 @@ public class HudController {
         headerTitle = new TextView(ctx);
         headerTitle.setGravity(Gravity.CENTER_VERTICAL);
         headerTitle.setPadding(8, 7, 8, 7);
-        UiTheme.applyStatusText(headerTitle, 15, font);
+        UiTheme.applyStatusText(headerTitle, 14, font);
         header.addView(headerTitle, new LinearLayout.LayoutParams(0, -2, 1.0f));
 
         FrameLayout.LayoutParams headerLp = new FrameLayout.LayoutParams(-1, -2, Gravity.TOP);
@@ -149,17 +150,17 @@ public class HudController {
         // 9-cell horizontal overlay (pinned to bottom)
         overlay = new LinearLayout(ctx);
         overlay.setOrientation(LinearLayout.HORIZONTAL);
-        UiTheme.panel(overlay);
-        overlay.setPadding(12, 14, 12, 14);
+        UiTheme.clear(overlay);
+        overlay.setPadding(10, 8, 10, 8);
         overlay.setVisibility(View.GONE);
         for (int i = 0; i < 9; i++) {
             cells[i] = new LinearLayout(ctx);
             cells[i].setOrientation(LinearLayout.VERTICAL);
             cells[i].setGravity(Gravity.CENTER);
             cells[i].setPadding(6, 8, 6, 8);
-            cellLabels[i] = new TextView(ctx); cellLabels[i].setTextColor(UiTheme.TEXT_MUTED); cellLabels[i].setTextSize(13);
+            cellLabels[i] = new TextView(ctx); cellLabels[i].setTextColor(UiTheme.TEXT_MUTED); cellLabels[i].setTextSize(12);
             if (font != null) cellLabels[i].setTypeface(font); else cellLabels[i].setTypeface(Typeface.DEFAULT_BOLD);
-            cellValues[i] = new TextView(ctx); cellValues[i].setTextColor(UiTheme.TEXT); cellValues[i].setTextSize(18);
+            cellValues[i] = new TextView(ctx); cellValues[i].setTextColor(UiTheme.TEXT); cellValues[i].setTextSize(16);
             if (font != null) cellValues[i].setTypeface(font); else cellValues[i].setTypeface(Typeface.DEFAULT_BOLD);
             cells[i].addView(cellLabels[i]); cells[i].addView(cellValues[i]);
             LinearLayout.LayoutParams cellLp = new LinearLayout.LayoutParams(0, -2, 1.0f);
@@ -775,13 +776,14 @@ public class HudController {
     // -----------------------------------------------------------------------
     private void renderHeader(String title) {
         header.setVisibility(View.VISIBLE);
+        UiTheme.titlePanel(header, UiTheme.ACCENT);
         UiTheme.pageTabPanel(headerBack, UiTheme.ACCENT, selection == -2, false);
-        headerBack.setTextColor(selection == -2 ? UiTheme.TEXT : UiTheme.TEXT_MUTED);
+        headerBack.setTextColor(selection == -2 ? UiTheme.TEXT_ON_ACCENT : UiTheme.TEXT_MUTED);
         headerBack.setText("BACK");
         headerTitle.setText(title != null ? title : "");
         headerTitle.setTextColor(UiTheme.TEXT);
         headerTitle.setShadowLayer(2, 0, 0, UiTheme.SHADOW);
-        UiTheme.titlePanel(headerTitle, UiTheme.ACCENT);
+        UiTheme.clear(headerTitle);
     }
 
     private void renderNameKeyboard(MenuController mc) {
@@ -1001,7 +1003,7 @@ public class HudController {
             if(i<activeCells){cells[i].setVisibility(View.VISIBLE);cellLabels[i].setText(labels[i]);cellValues[i].setText(values[i]);
                 UiTheme.actionPanel(cells[i], UiTheme.ACCENT, i==selectedCell, true);
                 if(i==selectedCell){
-                    cellLabels[i].setTextColor(UiTheme.TEXT);
+                    cellLabels[i].setTextColor(UiTheme.TEXT_ON_ACCENT);
                     cellValues[i].setTextColor(selectedValueColor());
                 }
                 else{cellLabels[i].setTextColor(UiTheme.TEXT_MUTED);cellValues[i].setTextColor(UiTheme.TEXT);}
@@ -1016,7 +1018,7 @@ public class HudController {
             if(!tip.isEmpty()){
                 if(selection == SEL_MATRIX_SAVED || selection == SEL_MATRIX_SAVE_NEW || selection == SEL_MATRIX_DELETE){
                     UiTheme.actionPanel(tooltip, UiTheme.ACCENT, true, true);
-                    tooltip.setTextColor(UiTheme.TEXT);
+                    tooltip.setTextColor(UiTheme.TEXT_ON_ACCENT);
                 } else {
                     UiTheme.softPanel(tooltip);
                     tooltip.setTextColor(UiTheme.TEXT_MUTED);
@@ -1029,7 +1031,7 @@ public class HudController {
     private void styleMatrixAction(TextView view, boolean selected, boolean editing) {
         UiTheme.actionPanel(view, UiTheme.ACCENT, selected, true);
         if (editing) view.setTextColor(UiTheme.WARN);
-        else view.setTextColor(selected ? UiTheme.TEXT : UiTheme.TEXT_MUTED);
+        else view.setTextColor(selected ? UiTheme.TEXT_ON_ACCENT : UiTheme.TEXT_MUTED);
         view.setShadowLayer(selected ? 2 : 0, 0, 0, UiTheme.SHADOW);
     }
 
@@ -1038,12 +1040,12 @@ public class HudController {
     }
 
     private int selectedNavigationColor() {
-        return UiTheme.TEXT;
+        return UiTheme.ACCENT;
     }
 
     private int selectedValueColor() {
         if (valueEditing || isAdjustingNow()) return UiTheme.WARN;
-        return UiTheme.TEXT;
+        return UiTheme.TEXT_ON_ACCENT;
     }
 
     private void markNavigating() {
