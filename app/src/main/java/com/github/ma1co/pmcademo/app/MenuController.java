@@ -1175,6 +1175,11 @@ public class MenuController {
         else if (currentPage == 9) subtitle = "SUPPORT - Resources";
         else if (currentPage == 10) subtitle = "SETTINGS - Minimum Shutter";
         tvSubtitle.setText(subtitle);
+        if (currentMainTab == 1 && !manualQueueOpen) {
+            headerBar.setVisibility(View.GONE);
+            tvSubtitle.setVisibility(View.GONE);
+            pageDivider.setVisibility(View.GONE);
+        }
 
         for (int i = 0; i < 8; i++) {
             rows[i].setVisibility(View.GONE);
