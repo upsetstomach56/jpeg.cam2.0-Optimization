@@ -78,7 +78,7 @@ public class ImageProcessor {
             if (hasUsableLut(lutPath, lutName)) {
                 if (!mEngine.loadLut(lutPath, lutName)) return false;
             } else {
-                mEngine.loadLut(null, "OFF");
+                mEngine.loadLut("NONE", "OFF");
             }
             if (grain > 0) {
                 File texFile = MenuController.getGrainTextureFile(grainSize);
@@ -211,7 +211,7 @@ public class ImageProcessor {
                 } else if (p.opacity > 0 && hasUsableLut(lutPath, lutName)) {
                     if (!mEngine.loadLut(lutPath, lutName)) return "FAILED";
                 } else {
-                    mEngine.loadLut(null, "OFF");
+                    mEngine.loadLut("NONE", "OFF");
                 }
                 lutReadyMs = System.currentTimeMillis();
 
