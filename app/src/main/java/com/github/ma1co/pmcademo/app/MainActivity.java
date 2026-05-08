@@ -8,7 +8,11 @@ import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.ColorMatrix;
+import android.graphics.ColorMatrixColorFilter;
 import android.graphics.Matrix;
+import android.graphics.Paint;
+import android.graphics.SurfaceTexture;
 import android.graphics.Typeface;
 import android.hardware.Camera;
 import android.media.ExifInterface;
@@ -19,8 +23,7 @@ import android.os.Handler;
 import android.util.Pair;
 import android.view.Gravity;
 import android.view.KeyEvent;
-import android.view.SurfaceHolder;
-import android.view.SurfaceView;
+import android.view.TextureView;
 import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
@@ -38,7 +41,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
-public class MainActivity extends Activity implements SurfaceHolder.Callback,
+public class MainActivity extends Activity implements TextureView.SurfaceTextureListener,
     SonyCameraManager.CameraEventListener, InputManager.InputListener,
     ConnectivityManager.StatusUpdateListener, PlaybackController.HostCallback,
     LensCalibrationController.HostCallback, MenuController.HostCallback,
@@ -81,7 +84,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     private int captureWriteToken = 0;
     private int pendingQueueProcessTargetCount = 0;
 
-    private SurfaceView mSurfaceView;
+    private TextureView mSurfaceView;
     private boolean hasSurface = false;
 
     private FrameLayout mainUIContainer;
@@ -132,7 +135,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     private int prefJpegQuality = 95;
     private int appTheme = UiTheme.THEME_ORANGE;
     private int processingFrequency = 1;
-    private boolean liveViewMonochromeSuspended = false;
+    private Paint liveViewMonochromePaint;
     private DiptychManager diptychManager;
 
     private LensProfileManager lensManager;
@@ -397,14 +400,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         }
 
         FrameLayout rootLayout = new FrameLayout(this);
-        mSurfaceView = new SurfaceView(this);
-        mSurfaceView.getHolder().addCallback(this);
-        mSurfaceView.getHolder().setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
+        mSurfaceView = new TextureView(this);
+        mSurfaceView.setSurfaceTextureListener(this);
         rootLayout.addView(mSurfaceView, new FrameLayout.LayoutParams(-1, -1));
         mSurfaceView.post(new Runnable() {
             @Override
             public void run() {
                 updateDiptychPreviewWindow();
+                applyLiveViewMonochromeToCamera(prefLiveViewMonochrome);
             }
         });
 
@@ -1783,66 +1786,39 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     private void applyHardwareRecipe() {
         if (cameraManager == null || cameraManager.getCamera() == null) return;
         HardwareRecipeApplier.apply(cameraManager.getCamera(), recipeManager.getCurrentProfile());
-        if (!liveViewMonochromeSuspended) applyLiveViewMonochromeToCamera(prefLiveViewMonochrome);
+        applyLiveViewMonochromeToCamera(prefLiveViewMonochrome);
     }
 
     // getWbString() removed — logic consolidated into HardwareRecipeApplier.
 
     private void applyLiveViewMonochromeToCamera(boolean enabled) {
-        if (cameraManager == null || cameraManager.getCamera() == null) return;
+        if (mSurfaceView == null) return;
+        if (android.os.Build.VERSION.SDK_INT < 11) return;
+
         try {
-            Camera c = cameraManager.getCamera();
-            if (!enabled) {
-                HardwareRecipeApplier.apply(c, recipeManager.getCurrentProfile());
-                return;
+            if (enabled) {
+                if (liveViewMonochromePaint == null) {
+                    ColorMatrix matrix = new ColorMatrix();
+                    matrix.setSaturation(0.0f);
+                    liveViewMonochromePaint = new Paint();
+                    liveViewMonochromePaint.setColorFilter(new ColorMatrixColorFilter(matrix));
+                }
+                mSurfaceView.setLayerType(View.LAYER_TYPE_HARDWARE, liveViewMonochromePaint);
+            } else {
+                mSurfaceView.setLayerType(View.LAYER_TYPE_NONE, null);
             }
-
-            boolean applied = false;
-            try {
-                Camera.Parameters p = c.getParameters();
-                List<String> effects = p.getSupportedColorEffects();
-                if (effects != null && effects.contains(Camera.Parameters.EFFECT_MONO)) {
-                    String current = p.getColorEffect();
-                    if (!Camera.Parameters.EFFECT_MONO.equals(current)) {
-                        p.setColorEffect(Camera.Parameters.EFFECT_MONO);
-                        c.setParameters(p);
-                    }
-                    applied = true;
-                }
-            } catch (Throwable ignored) {}
-
-            try {
-                Camera.Parameters p = c.getParameters();
-                boolean changed = false;
-                if (p.get("creative-style") != null) {
-                    p.set("creative-style", "mono");
-                    changed = true;
-                }
-                if (p.get("color-mode") != null) {
-                    p.set("color-mode", "mono");
-                    changed = true;
-                }
-                if (changed) {
-                    c.setParameters(p);
-                    applied = true;
-                }
-            } catch (Throwable ignored) {}
-
-            if (!applied) Log.w("JPEG.CAM", "Live view monochrome is not supported by this camera API");
+            mSurfaceView.invalidate();
         } catch (Throwable t) {
-            Log.e("JPEG.CAM", "Failed to update live view monochrome", t);
+            Log.e("JPEG.CAM", "Failed to update live view monochrome filter", t);
         }
     }
 
     private void prepareLiveViewMonochromeForCapture() {
-        if (!prefLiveViewMonochrome) return;
-        liveViewMonochromeSuspended = true;
-        applyLiveViewMonochromeToCamera(false);
+        // Monochrome live view is a TextureView display filter, not a camera
+        // parameter. Captures stay color without suspending the visual filter.
     }
 
     private void restoreLiveViewMonochromeAfterCapture() {
-        if (!liveViewMonochromeSuspended) return;
-        liveViewMonochromeSuspended = false;
         applyLiveViewMonochromeToCamera(prefLiveViewMonochrome);
     }
 
@@ -2141,6 +2117,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         super.onResume();
         // REMOVED: cameraManager.start() which was causing the build error!
         registerBatteryReceiver();
+        if (mSurfaceView != null && mSurfaceView.isAvailable() && cameraManager != null && cameraManager.getCamera() == null) {
+            hasSurface = true;
+            cameraManager.open(mSurfaceView.getSurfaceTexture());
+            applyLiveViewMonochromeToCamera(prefLiveViewMonochrome);
+            updateDiptychPreviewWindow();
+        }
 
         // --- PREVENT PASM DIAL CRASH ON A7II ---
         // Register a receiver to swallow Sony's internal hardware state broadcasts
@@ -2454,19 +2436,25 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     }
 
     @Override
-    public void surfaceCreated(SurfaceHolder h) {
+    public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
         hasSurface = true;
-        if (cameraManager != null) cameraManager.open(h);
+        if (cameraManager != null) cameraManager.open(surface);
+        applyLiveViewMonochromeToCamera(prefLiveViewMonochrome);
         updateDiptychPreviewWindow();
     }
 
     @Override
-    public void surfaceDestroyed(SurfaceHolder h) {
+    public boolean onSurfaceTextureDestroyed(SurfaceTexture surface) {
         hasSurface = false;
         if (cameraManager != null) cameraManager.close();
+        return true;
     }
 
-    @Override public void surfaceChanged(SurfaceHolder h, int f, int w, int h1) {}
+    @Override public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) {
+        updateDiptychPreviewWindow();
+    }
+
+    @Override public void onSurfaceTextureUpdated(SurfaceTexture surface) {}
 
     @Override
     public void onHardwareStateChanged() {
@@ -2666,7 +2654,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     @Override public void    setPrefGridLines(boolean v)    { prefShowGridLines    = v; }
     @Override public void    setPrefLiveViewMonochrome(boolean v) {
         prefLiveViewMonochrome = v;
-        liveViewMonochromeSuspended = false;
         applyLiveViewMonochromeToCamera(v);
         saveAppPreferences();
     }
