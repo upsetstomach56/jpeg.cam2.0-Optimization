@@ -709,174 +709,6 @@ static inline void fast_blur_2d_iir(uint8_t* map, int w, int h, int alpha) {
     free(temp);
 }
 
-static inline void apply_bloom_halation(
-    unsigned char** rows, uint8_t* out_row, int width, int abs_y, bool is_yuv, int bloom, int halation, uint32_t seed,
-    int* work_0, int* work_1, int* work_2, int* work_h, int* h_line, int scaleDenom, bool is_mono = false)
-{
-    // 1. Resolution-Aware Alphas & Intensities
-    int alpha, b_mix;
-
-    if (bloom == 5) {        // Local 1/8 (Tight radius, extremely subtle mix)
-        alpha = (scaleDenom == 4) ? 180 : ((scaleDenom == 2) ? 210 : 230);
-        b_mix = 45;
-    } else if (bloom == 6) { // Full 1/8 (Wide radius, extremely subtle mix)
-        alpha = (scaleDenom == 4) ? 230 : ((scaleDenom == 2) ? 245 : 252);
-        b_mix = 45;
-    } else if (bloom == 1) { // Local 1/4 (Tight radius, subtle mix)
-        alpha = (scaleDenom == 4) ? 180 : ((scaleDenom == 2) ? 210 : 230);
-        b_mix = 90;
-    } else if (bloom == 2) { // Full 1/4 (Wide radius, subtle mix)
-        alpha = (scaleDenom == 4) ? 230 : ((scaleDenom == 2) ? 245 : 252);
-        b_mix = 90;
-    } else if (bloom == 3) { // Local 1/2 (Tight radius, heavy mix)
-        alpha = (scaleDenom == 4) ? 180 : ((scaleDenom == 2) ? 210 : 230);
-        b_mix = 160;
-    } else if (bloom == 4) { // Full 1/2 (Wide radius, heavy mix)
-        alpha = (scaleDenom == 4) ? 230 : ((scaleDenom == 2) ? 245 : 252);
-        b_mix = 160;
-    } else {
-        alpha = 0; b_mix = 0;
-    }
-    int inv_alpha = 256 - alpha;
-
-    // Halation alpha remains independent
-    int h_alpha;
-    if (halation == 1) h_alpha = (scaleDenom == 4) ? 140 : ((scaleDenom == 2) ? 180 : 220);
-    else               h_alpha = (scaleDenom == 4) ? 197 : ((scaleDenom == 2) ? 221 : 240);
-    int inv_h = 256 - h_alpha;
-
-    if (!work_0 || !work_h) return;
-
-    // 2. Vertical Summation: y-outer loop for cache-friendly sequential row reads.
-    //    Pre-build a bloom emission LUT once per call to eliminate per-pixel branches
-    //    and multiplications inside the 21×width inner loop.
-    uint16_t bloom_emit_lut[256];
-    if (bloom > 0) {
-        const bool full_bloom = (bloom % 2 == 0);
-        for (int i = 0; i < 256; i++) {
-            int e;
-            if (full_bloom) {
-                // FULL BLOOM (Evens): linear shadows, boosted highlights
-                e = (i < 128) ? i : i + (((i - 128) * (i - 128)) >> 6);
-            } else {
-                // LOCAL BLOOM (Odds): crushed shadows, boosted highlights
-                e = (i < 128) ? ((i * i) >> 7) : i + (((i - 128) * (i - 128)) >> 6);
-            }
-            bloom_emit_lut[i] = (uint16_t)e;
-        }
-    }
-
-    memset(work_0, 0, width * sizeof(int));
-    memset(work_h, 0, width * sizeof(int));
-
-    for (int y = 0; y <= 20; y++) {
-        const int w = (y <= 10) ? (y + 1) : (21 - y); // Triangle weight
-        const uint8_t* row_y = rows[y];
-        for (int x = 0; x < width; x++) {
-            const int v0 = row_y[x*3];
-            const int lum = is_yuv ? v0 : ((v0*77 + row_y[x*3+1]*150 + row_y[x*3+2]*29) >> 8);
-            if (bloom > 0) work_0[x] += bloom_emit_lut[lum] * w;
-            if (halation > 0 && lum > 210) work_h[x] += (lum - 210) * 5 * w;
-        }
-    }
-
-    // 3. Horizontal IIR Blur (Spreading the high-precision light maps)
-    if (bloom > 0) {
-        int a0 = work_0[0];
-        for (int x = 1; x < width; x++) {
-            a0 = (a0 * alpha + work_0[x] * inv_alpha + 128) / 256;
-            work_0[x] = a0;
-        }
-        a0 = work_0[width-1];
-        for (int x = width-2; x >= 0; x--) {
-            a0 = (a0 * alpha + work_0[x] * inv_alpha + 128) / 256;
-            work_0[x] = a0;
-        }
-    }
-
-    if (halation > 0) {
-        int ah = work_h[0];
-        for (int x = 1; x < width; x++) {
-            ah = (ah * h_alpha + work_h[x] * inv_h + 128) / 256;
-            work_h[x] = ah;
-        }
-        ah = work_h[width-1];
-        for (int x = width-2; x >= 0; x--) {
-            ah = (ah * h_alpha + work_h[x] * inv_h + 128) / 256;
-            work_h[x] = ah;
-        }
-    }
-
-    // 4. Volumetric Reconstruction
-    int h_mix = (halation == 1) ? 120 : 200;
-
-    for (int x = 0; x < width; x++) {
-        int v0_o = rows[10][x*3], v1_o = rows[10][x*3+1], v2_o = rows[10][x*3+2];
-        int orig_y = is_yuv ? v0_o : ((v0_o*77 + v1_o*150 + v2_o*29)/256);
-
-        int blur_y = work_0[x] / 121;
-        int halation_y = work_h[x] / 121;
-
-        int b_bleed = blur_y - orig_y;
-        if (b_bleed < 0) b_bleed = 0;
-
-        int h_eff = (halation_y * h_mix) / 256;
-        h_eff = (h_eff * (255 - orig_y)) / 256;
-
-        if (is_yuv) {
-            int y_res = v0_o, cb_res = v1_o, cr_res = v2_o;
-
-            if (bloom > 0 && b_bleed > 0) {
-                int add_y = (b_bleed * b_mix) / 256;
-                y_res += add_y;
-                cb_res = cb_res + ((128 - cb_res) * add_y) / 256;
-                cr_res = cr_res + ((128 - cr_res) * add_y) / 256;
-            }
-
-            if (halation > 0 && h_eff > 0) {
-                y_res += h_eff / 3;
-                if (!is_mono) {
-                    // Warm golden cast — color mode only (real film behavior)
-                    cr_res += h_eff;
-                    cb_res -= h_eff / 2;
-                }
-                // Mono/sepia: neutral white glow only (B&W film has no color cast)
-            }
-
-            out_row[x*3]   = (uint8_t)CLAMP(y_res);
-            out_row[x*3+1] = (uint8_t)CLAMP(cb_res);
-            out_row[x*3+2] = (uint8_t)CLAMP(cr_res);
-        } else {
-            // RGB Path
-            int r_res = v0_o, g_res = v1_o, b_res = v2_o;
-
-            if (bloom > 0 && b_bleed > 0) {
-                int add = (b_bleed * b_mix) / 256;
-                r_res += add;
-                g_res += add;
-                b_res += add;
-            }
-
-            if (halation > 0 && h_eff > 0) {
-                if (!is_mono) {
-                    // Warm golden cast — color mode only (real film behavior)
-                    r_res += h_eff;
-                    g_res += h_eff / 5;
-                    b_res -= h_eff / 5;
-                } else {
-                    // Neutral white glow in mono/sepia (B&W film has no color cast)
-                    r_res += h_eff / 3;
-                    g_res += h_eff / 3;
-                    b_res += h_eff / 3;
-                }
-            }
-
-            out_row[x*3]   = (uint8_t)CLAMP(r_res);
-            out_row[x*3+1] = (uint8_t)CLAMP(g_res);
-            out_row[x*3+2] = (uint8_t)CLAMP(b_res);
-        }
-    }
-}
 
 // High-fidelity sampler for 1024x1024 textures to prevent aliasing on Proxy/Half
 static inline void sample_tex_bilinear_1024(const uint8_t* tex, int x_fp8, int y_fp8, int* outRGB) {
@@ -1244,18 +1076,18 @@ static inline void process_row_rgb(
             int h_top = h00 + (((h10 - h00) * fx) >> 8);
             int h_bot = h01 + (((h11 - h01) * fx) >> 8);
             int halation_y = h_top + (((h_bot - h_top) * fy) >> 8);
-            // Restore exact 1.67x inflation of blur energy from old sliding window's division anomaly
-            int scaled_blur = (blur_y * 167) / 100;
-            int b_bleed = scaled_blur - origY;
-            if (b_bleed < 0) b_bleed = 0;
-
-            if (bloom > 0 && b_bleed > 0) {
+            if (bloom > 0 && blur_y > 0) {
                 int b_mix = 0;
-                if (bloom == 5 || bloom == 6) b_mix = 45;
-                else if (bloom == 1 || bloom == 2) b_mix = 90;
-                else if (bloom == 3 || bloom == 4) b_mix = 160;
-                int add = (b_bleed * b_mix) / 256;
-                outR += add; outG += add; outB += add;
+                // Scaled down to match perceptual intensity of the old sliding-window engine
+                if (bloom == 5 || bloom == 6) b_mix = 30;
+                else if (bloom == 1 || bloom == 2) b_mix = 60;
+                else if (bloom == 3 || bloom == 4) b_mix = 100;
+                
+                int bright_factor = 64 + ((origY * 192) >> 8); // Hardware division removed
+                int add = (blur_y * b_mix * bright_factor) >> 16;
+                outR = CLAMP(outR + add);
+                outG = CLAMP(outG + add);
+                outB = CLAMP(outB + add);
             }
 
             int h_mix = (halation == 1) ? 120 : 200;
@@ -1264,9 +1096,13 @@ static inline void process_row_rgb(
 
             if (halation > 0 && h_eff > 0) {
                 if (!is_mono) {
-                    outR += h_eff; outG += h_eff / 5; outB -= h_eff / 5;
+                    outR = CLAMP(outR + h_eff);
+                    outG = CLAMP(outG + ((h_eff * 100) >> 8));
+                    outB = CLAMP(outB + ((h_eff * 30) >> 8));
                 } else {
-                    outR += h_eff / 3; outG += h_eff / 3; outB += h_eff / 3;
+                    outR = CLAMP(outR + h_eff / 3);
+                    outG = CLAMP(outG + h_eff / 3);
+                    outB = CLAMP(outB + h_eff / 3);
                 }
             }
         }
@@ -1464,18 +1300,16 @@ static inline void process_row_yuv(
             int h_top = h00 + (((h10 - h00) * fx) >> 8);
             int h_bot = h01 + (((h11 - h01) * fx) >> 8);
             int halation_y = h_top + (((h_bot - h_top) * map_fy) >> 8);
-            // Restore exact 1.67x inflation of blur energy from old sliding window's division anomaly
-            int scaled_blur = (blur_y * 167) / 100;
-            int b_bleed = scaled_blur - oldY;
-            if (b_bleed < 0) b_bleed = 0;
-
-            if (bloom > 0 && b_bleed > 0) {
+            if (bloom > 0 && blur_y > 0) {
                 int b_mix = 0;
-                if (bloom == 5 || bloom == 6) b_mix = 45;
-                else if (bloom == 1 || bloom == 2) b_mix = 90;
-                else if (bloom == 3 || bloom == 4) b_mix = 160;
-                int add_y = (b_bleed * b_mix) / 256;
-                outY += add_y;
+                // Scaled down to match perceptual intensity of the old sliding-window engine
+                if (bloom == 5 || bloom == 6) b_mix = 30;
+                else if (bloom == 1 || bloom == 2) b_mix = 60;
+                else if (bloom == 3 || bloom == 4) b_mix = 100;
+                
+                int bright_factor = 64 + ((oldY * 192) >> 8); // Hardware division removed
+                int add_y = (blur_y * b_mix * bright_factor) >> 16;
+                outY = CLAMP(outY + add_y);
                 cb = cb + ((-cb) * add_y) / 256; // Pulls saturation towards white (0 chroma)
                 cr = cr + ((-cr) * add_y) / 256;
             }
@@ -1485,10 +1319,12 @@ static inline void process_row_yuv(
             h_eff = (h_eff * (255 - oldY)) / 256;
 
             if (halation > 0 && h_eff > 0) {
-                outY += h_eff / 3;
+                outY = CLAMP(outY + h_eff / 3);
                 if (!is_mono) {
-                    cr += h_eff;
-                    cb -= h_eff / 2;
+                    cr = cr + ((h_eff * 128) >> 8);
+                    cb = cb - ((h_eff * 30) >> 8); // Tuned to match RGB path's color shift
+                    if (cr >  127) cr =  127; else if (cr < -128) cr = -128;
+                    if (cb >  127) cb =  127; else if (cb < -128) cb = -128;
                 }
             }
         }

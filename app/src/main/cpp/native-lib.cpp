@@ -357,32 +357,37 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
                     int lum = (row[i] * 77 + row[i+1] * 150 + row[i+2] * 29) >> 8;
                     
                     if (bloom > 0) {
-                        int e;
-                        if (bloom % 2 == 0) { // Full bloom (evens: 6, 2, 4)
-                            e = (lum < 128) ? lum : lum + (((lum - 128) * (lum - 128)) >> 6);
-                        } else { // Local bloom (odds: 5, 1, 3)
-                            e = (lum < 128) ? ((lum * lum) >> 7) : lum + (((lum - 128) * (lum - 128)) >> 6);
-                        }
-                        bloom_map[y * map_w + x] = (uint8_t)CLAMP(e);
+                        const int THRESH = 180;
+                        int over = lum > THRESH ? lum - THRESH : 0;
+                        // Full = wider knee (9), Local = tighter knee (5)
+                        int e = (bloom % 2 == 0) ? ((over * over * 9) >> 6)
+                                                 : ((over * over * 5) >> 6);
+                        if (e > 255) e = 255;
+                        bloom_map[y * map_w + x] = (uint8_t)e;
                     }
                     if (halation > 0 && lum > 210) {
-                        halation_map[y * map_w + x] = (uint8_t)CLAMP((lum - 210) * 5);
+                        int over = lum - 210;
+                        halation_map[y * map_w + x] = (uint8_t)CLAMP((over * over * 16) >> 6);
                     }
                 }
                 y++;
             }
             
             int b_alpha = 0;
-            // Radius exactly matched to the original sliding-window engine's physical spread!
-            // Local Bloom (Original spread ~3.5 pixels -> matches alpha 51 on downsampled map)
-            if (bloom == 5 || bloom == 1 || bloom == 3) b_alpha = 51; 
-            // Full Bloom (Original spread ~15 pixels -> matches alpha 176 on downsampled map)
-            else if (bloom == 6 || bloom == 2 || bloom == 4) b_alpha = 176;
+            // Radius tuned for TWO passes (Gaussian falloff)
+            if (bloom == 5 || bloom == 1 || bloom == 3) b_alpha = 40;  // Local
+            else if (bloom == 6 || bloom == 2 || bloom == 4) b_alpha = 140; // Full
 
-            int h_alpha = (halation == 1) ? 150 : 210;
+            int h_alpha = (halation == 1) ? 120 : 180; // slightly reduced for 2 passes
             
-            if (bloom > 0) fast_blur_2d_iir(bloom_map, map_w, map_h, b_alpha);
-            if (halation > 0) fast_blur_2d_iir(halation_map, map_w, map_h, h_alpha);
+            if (bloom > 0) {
+                fast_blur_2d_iir(bloom_map, map_w, map_h, b_alpha);
+                fast_blur_2d_iir(bloom_map, map_w, map_h, b_alpha); // 2nd pass for Gaussian
+            }
+            if (halation > 0) {
+                fast_blur_2d_iir(halation_map, map_w, map_h, h_alpha);
+                fast_blur_2d_iir(halation_map, map_w, map_h, h_alpha); // 2nd pass for Gaussian
+            }
         } else {
             if (bloom_map) free(bloom_map);
             if (halation_map) free(halation_map);
