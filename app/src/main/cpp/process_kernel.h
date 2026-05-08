@@ -1081,9 +1081,11 @@ static inline void process_row_rgb(
             // midtone contamination, and the mask was suppressing the visible halo
             // around bright objects (the most cinematically valuable part).
             const bool is_full_bloom = (bloom == 2 || bloom == 4 || bloom == 6);
-            if (is_full_bloom && blur_y > 0) {
+            if (is_full_bloom) {
+                int b_bleed = blur_y - origY;
+                if (b_bleed < 0) b_bleed = 0;
                 int b_mix = (bloom == 6) ? 30 : (bloom == 4) ? 60 : 100; // 1/8, 1/4, 1/2
-                int add = (blur_y * b_mix) >> 8;
+                int add = (b_bleed * b_mix) >> 8;
                 outR = CLAMP(outR + add);
                 outG = CLAMP(outG + add);
                 outB = CLAMP(outB + add);
@@ -1323,9 +1325,11 @@ static inline void process_row_yuv(
             // Bright_factor mask removed: the threshold in pass 1 already prevents
             // midtone contamination.
             const bool is_full_bloom = (bloom == 2 || bloom == 4 || bloom == 6);
-            if (is_full_bloom && blur_y > 0) {
+            if (is_full_bloom) {
+                int b_bleed = blur_y - oldY;
+                if (b_bleed < 0) b_bleed = 0;
                 int b_mix = (bloom == 6) ? 30 : (bloom == 4) ? 60 : 100; // 1/8, 1/4, 1/2
-                int add_y = (blur_y * b_mix) >> 8;
+                int add_y = (b_bleed * b_mix) >> 8;
                 outY = CLAMP(outY + add_y);
                 cb = cb + ((-cb) * add_y) / 256; // Pull saturation toward neutral (bloom desaturates)
                 cr = cr + ((-cr) * add_y) / 256;
