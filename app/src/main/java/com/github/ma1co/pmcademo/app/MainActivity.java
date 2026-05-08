@@ -1844,8 +1844,8 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
             boolean changed = false;
             for (int i = 0; i < keys.length; i++) {
                 String key = keys[i];
-                if (p.get(key) != null || (flat != null && flat.indexOf(key + "=") >= 0)) {
-                    p.set(key, value);
+                if (flat != null && flat.indexOf(key + "=") >= 0) {
+                    setCameraParameterString(p, key, value);
                     changed = true;
                 }
             }
@@ -1853,6 +1853,11 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
         } catch (Throwable t) {
             Log.e("JPEG.CAM", "Failed to apply min aperture shutter", t);
         }
+    }
+
+    private void setCameraParameterString(Camera.Parameters params, String key, String value) throws Exception {
+        java.lang.reflect.Method setMethod = Camera.Parameters.class.getMethod("set", String.class, String.class);
+        setMethod.invoke(params, key, value);
     }
 
     // --- NEW: KELVIN CYCLE HELPER ---
@@ -1878,14 +1883,19 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
                     liveViewMonochromePaint = new Paint();
                     liveViewMonochromePaint.setColorFilter(new ColorMatrixColorFilter(matrix));
                 }
-                mSurfaceView.setLayerType(View.LAYER_TYPE_HARDWARE, liveViewMonochromePaint);
+                setViewLayerType(mSurfaceView, 2, liveViewMonochromePaint); // View.LAYER_TYPE_HARDWARE
             } else {
-                mSurfaceView.setLayerType(View.LAYER_TYPE_NONE, null);
+                setViewLayerType(mSurfaceView, 0, null); // View.LAYER_TYPE_NONE
             }
             mSurfaceView.invalidate();
         } catch (Throwable t) {
             Log.e("JPEG.CAM", "Failed to update live view monochrome filter", t);
         }
+    }
+
+    private void setViewLayerType(View view, int layerType, Paint paint) throws Exception {
+        java.lang.reflect.Method setLayerTypeMethod = View.class.getMethod("setLayerType", int.class, Paint.class);
+        setLayerTypeMethod.invoke(view, layerType, paint);
     }
 
     private void prepareLiveViewMonochromeForCapture() {
