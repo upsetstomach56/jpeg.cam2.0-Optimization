@@ -1,7 +1,13 @@
-# JPEG.CAM - In-Camera Custom Color Sciene System
+![License: MIT + Commons Clause](https://img.shields.io/badge/License-Commons%20Clause-red.svg)
+![Platform](https://img.shields.io/badge/platform-Sony%20Alpha%20PMCA-blue)
+![Built for Sony](https://img.shields.io/badge/Built%20for-Sony%20Alpha-black)
+
+# JPEG.CAM - In-Camera Custom Color Science System
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/jbuchanan)
 
 **💾 DOWNLOAD LINK:** Download the latest release from https://www.jpeg.cam
+
+📺 Video WALK THRU LINK: https://www.youtube.com/watch?v=W1nfQPWFIy0
 
 **⚠️ BETA STATUS:** This project is currently in early beta. While it is stable and produces high-quality results, it is a "proof of concept" running on 2014-era hardware.
 

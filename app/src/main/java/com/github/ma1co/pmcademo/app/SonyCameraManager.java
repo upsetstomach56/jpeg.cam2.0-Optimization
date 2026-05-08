@@ -19,7 +19,7 @@ public class SonyCameraManager {
     private boolean previewMagnificationActive;
     private int previewMagnificationLevel = PREVIEW_MAGNIFICATION_FOCUS_LEVEL;
     private Pair<Integer, Integer> previewMagnificationCoordinates = null;
-    
+
     private String origSceneMode;
     private String origFocusMode;
     private String origWhiteBalance;
@@ -43,7 +43,7 @@ public class SonyCameraManager {
         void onApertureChanged();
         void onIsoChanged();
         void onFocusPositionChanged(float ratio);
-        void onFocalLengthChanged(float focalLengthMm); 
+        void onFocalLengthChanged(float focalLengthMm);
         void onHardwareStateChanged(); // <-- MUST BE HERE
     }
 
@@ -53,12 +53,12 @@ public class SonyCameraManager {
         this.listener = listener;
     }
 
-    public Camera getCamera() { 
-        return camera; 
+    public Camera getCamera() {
+        return camera;
     }
-    
-    public CameraEx getCameraEx() { 
-        return cameraEx; 
+
+    public CameraEx getCameraEx() {
+        return cameraEx;
     }
 
     public boolean isPreviewMagnificationActive() {
@@ -82,7 +82,7 @@ public class SonyCameraManager {
             try {
                 cameraEx = CameraEx.open(0, null);
                 camera = cameraEx.getNormalCamera();
-                
+
                 cameraEx.startDirectShutter();
                 CameraEx.AutoPictureReviewControl apr = new CameraEx.AutoPictureReviewControl();
                 cameraEx.setAutoPictureReviewControl(apr);
@@ -113,10 +113,10 @@ public class SonyCameraManager {
                 }
 
                 setupNativeListeners();
-                
+
                 camera.setPreviewDisplay(holder);
                 camera.startPreview();
-                
+
                 try {
                     Camera.Parameters params = camera.getParameters();
                     CameraEx.ParametersModifier pm = cameraEx.createParametersModifier(params);
@@ -157,11 +157,11 @@ public class SonyCameraManager {
         if (camera != null) {
             try {
                 camera.cancelAutoFocus();
-                
-                // FIX: We MUST stop the live video stream before modifying final 
-                // parameters or releasing the camera. Leaving the DMA pipeline open 
+
+                // FIX: We MUST stop the live video stream before modifying final
+                // parameters or releasing the camera. Leaving the DMA pipeline open
                 // when releasing the camera causes a guaranteed kernel panic on BIONZ!
-                camera.stopPreview(); 
+                camera.stopPreview();
             } catch (Exception e) {
                 Log.e("JPEG.CAM", "Failed to cancel AF or stop preview on close.");
             }
@@ -187,17 +187,17 @@ public class SonyCameraManager {
                 if (origColorMode != null) p.set("color-mode", origColorMode);
                 if (origProColorMode != null) p.set("pro-color-mode", origProColorMode);
                 if (origPictureEffect != null) p.set("picture-effect", origPictureEffect);
-                
+
                 camera.setParameters(p);
                 Log.d("JPEG.CAM", "Successfully restored standard Sony parameters.");
-                
+
                 // Give the BIONZ daemon time to digest these standard settings before calling release().
                 Thread.sleep(300);
             } catch (Exception e) {
                 Log.e("JPEG.CAM", "Failed to restore parameters: " + e.getMessage());
             }
         }
-        
+
         // 3. Safely release the hardware
         if (cameraEx != null) {
             try {
@@ -287,6 +287,24 @@ public class SonyCameraManager {
         }
     }
 
+    public boolean jumpToPreviewMagnification(int x, int y) {
+        if (cameraEx == null || !previewMagnificationActive) {
+            return false;
+        }
+
+        Pair<Integer, Integer> next = Pair.create(
+                clampPreviewMagnificationCoordinate(x),
+                clampPreviewMagnificationCoordinate(y));
+
+        try {
+            setPreviewMagnificationInternal(previewMagnificationLevel, next);
+            previewMagnificationCoordinates = next;
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     private int clampPreviewMagnificationCoordinate(int value) {
         if (value > PREVIEW_MAGNIFICATION_MAX_COORDINATE) {
             return PREVIEW_MAGNIFICATION_MAX_COORDINATE;
@@ -311,7 +329,7 @@ public class SonyCameraManager {
 
     private void setupNativeListeners() {
         cameraEx.setShutterSpeedChangeListener(new CameraEx.ShutterSpeedChangeListener() {
-            @Override 
+            @Override
             public void onShutterSpeedChange(CameraEx.ShutterSpeedInfo i, CameraEx c) {
                 if (listener != null) listener.onShutterSpeedChanged();
             }
@@ -322,7 +340,7 @@ public class SonyCameraManager {
             Object proxy = java.lang.reflect.Proxy.newProxyInstance(
                 getClass().getClassLoader(), new Class[]{lClass},
                 new java.lang.reflect.InvocationHandler() {
-                    @Override 
+                    @Override
                     public Object invoke(Object p, java.lang.reflect.Method m, Object[] a) {
                         if (m.getName().equals("onApertureChange") && listener != null) {
                             listener.onApertureChanged();
@@ -339,7 +357,7 @@ public class SonyCameraManager {
             Object proxy = java.lang.reflect.Proxy.newProxyInstance(
                 getClass().getClassLoader(), new Class[]{lClass},
                 new java.lang.reflect.InvocationHandler() {
-                    @Override 
+                    @Override
                     public Object invoke(Object p, java.lang.reflect.Method m, Object[] a) {
                         if (m.getName().equals("onChanged") && listener != null) {
                             listener.onIsoChanged();
@@ -356,7 +374,7 @@ public class SonyCameraManager {
             Object proxy = java.lang.reflect.Proxy.newProxyInstance(
                 getClass().getClassLoader(), new Class[]{lClass},
                 new java.lang.reflect.InvocationHandler() {
-                    @Override 
+                    @Override
                     public Object invoke(Object p, java.lang.reflect.Method m, Object[] a) throws Throwable {
                         if (m.getName().equals("onChanged") && a != null && a.length == 2) {
                             Object pos = a[0];
@@ -378,7 +396,7 @@ public class SonyCameraManager {
             Object proxy = java.lang.reflect.Proxy.newProxyInstance(
                 getClass().getClassLoader(), new Class[]{lClass},
                 new java.lang.reflect.InvocationHandler() {
-                    @Override 
+                    @Override
                     public Object invoke(Object p, java.lang.reflect.Method m, Object[] a) {
                         if (m.getName().equals("onFocalLengthChanged") && a.length > 0) {
                             if (listener != null) {
@@ -399,7 +417,7 @@ public class SonyCameraManager {
             Object proxy = java.lang.reflect.Proxy.newProxyInstance(
                 getClass().getClassLoader(), new Class[]{lClass},
                 new java.lang.reflect.InvocationHandler() {
-                    @Override 
+                    @Override
                     public Object invoke(Object p, java.lang.reflect.Method m, Object[] a) {
                         if (m.getName().equals("onChanged") && listener != null) {
                             listener.onHardwareStateChanged();

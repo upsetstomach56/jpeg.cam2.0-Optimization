@@ -352,6 +352,9 @@ public class ProcessingQueueManager {
         obj.put("subtractiveSat", profile.subtractiveSat);
         obj.put("halation", profile.halation);
         obj.put("bloom", profile.bloom);
+        if (profile.camFile != null) obj.put("camFile", profile.camFile);
+        if (profile.bundledLutName != null) obj.put("bundledLutName", profile.bundledLutName);
+        if (profile.bundledGrainName != null) obj.put("bundledGrainName", profile.bundledGrainName);
         return obj;
     }
 
@@ -400,6 +403,9 @@ public class ProcessingQueueManager {
         p.subtractiveSat = obj.optInt("subtractiveSat", 0);
         p.halation = obj.optInt("halation", 0);
         p.bloom = obj.optInt("bloom", 0);
+        p.camFile = obj.has("camFile") ? obj.optString("camFile", null) : null;
+        p.bundledLutName = obj.has("bundledLutName") ? obj.optString("bundledLutName", null) : null;
+        p.bundledGrainName = obj.has("bundledGrainName") ? obj.optString("bundledGrainName", null) : null;
         return p;
     }
 
@@ -466,6 +472,9 @@ public class ProcessingQueueManager {
         copy.subtractiveSat = source.subtractiveSat;
         copy.halation = source.halation;
         copy.bloom = source.bloom;
+        copy.camFile = source.camFile;
+        copy.bundledLutName = source.bundledLutName;
+        copy.bundledGrainName = source.bundledGrainName;
         return copy;
     }
 

@@ -16,9 +16,20 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 add_subdirectory(libjpeg-turbo)
 add_library(native-lib SHARED native-lib.cpp)
 
-# SPEED FIX: Optimize only our processing library so libjpeg-turbo keeps its
-# original build behavior and JPEG output stays as stable as possible.
-target_compile_options(native-lib PRIVATE -O3)
+# SPEED FIX: Optimize the ARMv7 camera build for the BIONZ X Cortex-A5.
+# Keep the legacy armeabi build on plain -O3 so the dual-ABI build still works.
+if(ANDROID_ABI STREQUAL "armeabi-v7a")
+    target_compile_options(native-lib PRIVATE
+        -O3
+        -ffast-math
+        -march=armv7-a
+        -mtune=cortex-a5
+        -mfpu=vfpv4
+        -mfloat-abi=softfp
+    )
+else()
+    target_compile_options(native-lib PRIVATE -O3)
+endif()
 
 target_include_directories(native-lib PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/libjpeg-turbo

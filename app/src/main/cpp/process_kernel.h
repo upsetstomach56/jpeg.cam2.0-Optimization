@@ -1,4 +1,4 @@
-﻿#ifndef PROCESS_KERNEL_H
+#ifndef PROCESS_KERNEL_H
 #define PROCESS_KERNEL_H
 
 #include <stdint.h>
@@ -12,7 +12,7 @@
 #define CLAMP(x) ((x) < 0 ? 0 : ((x) > 255 ? 255 : (x)))
 
 // Fast Integer Approximation of CSS 'Overlay' Blend Mode
-inline int blend_overlay(int base, int blend) {
+static inline int blend_overlay(int base, int blend) {
     base = CLAMP(base);
     blend = CLAMP(blend);
     if (base < 128) {
@@ -38,12 +38,12 @@ inline int blend_overlay(int base, int blend) {
 // bloom, 0, 6
 // === END_METADATA ===
 
-inline long long get_vig_coef(int vignette, long long max_dist_sq) {
+static inline long long get_vig_coef(int vignette, long long max_dist_sq) {
     int s_vig = vignette * 12;
     return ((long long)((s_vig * 256) / 100) << 24) / (max_dist_sq > 0 ? max_dist_sq : 1);
 }
 
-inline void generate_rolloff_lut(uint8_t* lut, int rollOff) {
+static inline void generate_rolloff_lut(uint8_t* lut, int rollOff) {
     int s_roll = rollOff * 20;
     for (int i = 0; i < 256; i++) {
         int r_t = (i > 200) ? i - ((i - 200) * (i - 200) * s_roll) / 11000 : i;
@@ -51,14 +51,14 @@ inline void generate_rolloff_lut(uint8_t* lut, int rollOff) {
     }
 }
 
-inline uint32_t fast_rand(uint32_t* state) {
+static inline uint32_t fast_rand(uint32_t* state) {
     uint32_t x = *state; x ^= x << 13; x ^= x >> 17; x ^= x << 5; *state = x; return x;
 }
 
 // ==========================================
 // ADVANCED GRAIN ENGINE (ATLAS & NOISE MATH)
 // ==========================================
-inline uint32_t hash2d(uint32_t x, uint32_t y, uint32_t seed) {
+static inline uint32_t hash2d(uint32_t x, uint32_t y, uint32_t seed) {
     uint32_t h = x * 0x9E3779B1u;
     h ^= y * 0x85EBCA77u;
     h ^= seed * 0xC2B2AE3Du;
@@ -70,26 +70,26 @@ inline uint32_t hash2d(uint32_t x, uint32_t y, uint32_t seed) {
     return h;
 }
 
-inline uint32_t next_rng(uint32_t& state) {
+static inline uint32_t next_rng(uint32_t& state) {
     state = state * 1664525u + 1013904223u;
     return state;
 }
 
-inline float rand_unit(uint32_t& state) {
+static inline float rand_unit(uint32_t& state) {
     return float((next_rng(state) >> 8) & 0x00FFFFFFu) * (1.0f / 16777215.0f);
 }
 
-inline float gaussianish(uint32_t& state) {
+static inline float gaussianish(uint32_t& state) {
     float sum = 0.0f;
     for (int i = 0; i < 6; ++i) sum += rand_unit(state);
     return (sum - 3.0f) * 1.41421356f;
 }
 
-inline int signed_hash8_xy(int x, int y, uint32_t seed) {
+static inline int signed_hash8_xy(int x, int y, uint32_t seed) {
     return (int)(hash2d((uint32_t)x, (uint32_t)y, seed) & 255u) - 128;
 }
 
-inline int grain_amount_mask(int y);
+static inline int grain_amount_mask(int y);
 
 struct BakedGrainAtlas {
     int size;
@@ -117,7 +117,7 @@ struct BakedGrainAtlas {
     BakedGrainAtlas() : size(256), mask(255), ready(false) {}
 };
 
-inline void blur_field(std::vector<float>& field, int size, int passes) {
+static inline void blur_field(std::vector<float>& field, int size, int passes) {
     const int count = size * size;
     std::vector<float> tmp(count, 0.0f);
 
@@ -145,7 +145,7 @@ inline void blur_field(std::vector<float>& field, int size, int passes) {
     }
 }
 
-inline void generate_correlated_template(std::vector<int8_t>& out, int size, uint32_t seed, int blurA, int blurB, int blurC, float mixB, float mixC, int targetStd) {
+static inline void generate_correlated_template(std::vector<int8_t>& out, int size, uint32_t seed, int blurA, int blurB, int blurC, float mixB, float mixC, int targetStd) {
     const int count = size * size;
     std::vector<float> a(count);
     std::vector<float> b(count);
@@ -192,7 +192,7 @@ inline void generate_correlated_template(std::vector<int8_t>& out, int size, uin
     }
 }
 
-inline void draw_soft_dot(std::vector<float>& field, int size, float fx, float fy, float radius, float amplitude) {
+static inline void draw_soft_dot(std::vector<float>& field, int size, float fx, float fy, float radius, float amplitude) {
     int ir = (int)std::ceil(radius * 1.85f);
     int cx = (int)std::floor(fx);
     int cy = (int)std::floor(fy);
@@ -218,7 +218,7 @@ inline void draw_soft_dot(std::vector<float>& field, int size, float fx, float f
     }
 }
 
-inline void generate_point_template(std::vector<int8_t>& out, int size, uint32_t seed, int dotCount, int blurPasses, int targetStd) {
+static inline void generate_point_template(std::vector<int8_t>& out, int size, uint32_t seed, int dotCount, int blurPasses, int targetStd) {
     const int count = size * size;
     std::vector<float> field(count, 0.0f);
     uint32_t state = hash2d((uint32_t)(size * 9), (uint32_t)dotCount, seed ^ 0xA24BAED4u);
@@ -258,7 +258,7 @@ inline void generate_point_template(std::vector<int8_t>& out, int size, uint32_t
     }
 }
 
-inline void build_carrier_template(std::vector<int8_t>& out, int size, const std::vector<int8_t>& fine, const std::vector<int8_t>& medium, const std::vector<int8_t>& coarse, const std::vector<int8_t>& point, int wPoint, int wFine, int wMedium, int wCoarse, int targetStd) {
+static inline void build_carrier_template(std::vector<int8_t>& out, int size, const std::vector<int8_t>& fine, const std::vector<int8_t>& medium, const std::vector<int8_t>& coarse, const std::vector<int8_t>& point, int wPoint, int wFine, int wMedium, int wCoarse, int targetStd) {
     const int count = size * size;
     std::vector<float> field(count, 0.0f);
     double mean = 0.0;
@@ -292,7 +292,7 @@ inline void build_carrier_template(std::vector<int8_t>& out, int size, const std
     }
 }
 
-inline BakedGrainAtlas& baked_grain_atlas() {
+static inline BakedGrainAtlas& baked_grain_atlas() {
     static BakedGrainAtlas t;
     if (!t.ready) {
         const int size = 256;
@@ -328,12 +328,12 @@ inline BakedGrainAtlas& baked_grain_atlas() {
     return t;
 }
 
-inline int sample_atlas_template(const std::vector<int8_t>& tpl, int sizeMask, int x, int y) {
+static inline int sample_atlas_template(const std::vector<int8_t>& tpl, int sizeMask, int x, int y) {
     return tpl[((y & sizeMask) * (sizeMask + 1)) + (x & sizeMask)];
 }
 
 // --- NEW: Kills the "Cheetah Print" using Hermite Smoothstep ---
-inline int sample_atlas_bilinear(const std::vector<int8_t>& tpl, int sizeMask, int x_fp8, int y_fp8) {
+static inline int sample_atlas_bilinear(const std::vector<int8_t>& tpl, int sizeMask, int x_fp8, int y_fp8) {
     int cx = (x_fp8 >> 8) & sizeMask;
     int cy = (y_fp8 >> 8) & sizeMask;
     int nx = (cx + 1) & sizeMask;
@@ -351,7 +351,7 @@ inline int sample_atlas_bilinear(const std::vector<int8_t>& tpl, int sizeMask, i
     return interp_x1 + (((interp_x2 - interp_x1) * fy) >> 8);
 }
 
-inline int grain_amount_mask(int y) {
+static inline int grain_amount_mask(int y) {
     if (y < 16 || y > 236) return 0;
     if (y < 40) return ((y - 16) * 52) >> 3;
     if (y < 96) return 156 + ((y - 40) * 88) / 56;
@@ -360,7 +360,7 @@ inline int grain_amount_mask(int y) {
     return 88 - ((y - 196) * 88) / 40;
 }
 
-inline int apply_density_style_grain_y(int y, int grainTerm) {
+static inline int apply_density_style_grain_y(int y, int grainTerm) {
     int out = y;
     if (grainTerm > 0) {
         out -= (grainTerm * (104 + y)) >> 8;
@@ -370,7 +370,7 @@ inline int apply_density_style_grain_y(int y, int grainTerm) {
     return CLAMP(out);
 }
 
-inline int grain_profile_index(int densityY) {
+static inline int grain_profile_index(int densityY) {
     if (densityY < 56) return 0;
     if (densityY < 104) return 1;
     if (densityY < 156) return 2;
@@ -378,7 +378,7 @@ inline int grain_profile_index(int densityY) {
     return 4;
 }
 
-inline int select_profile_full_res(int densityY, int x, int y, uint32_t seed, const BakedGrainAtlas& atlas) {
+static inline int select_profile_full_res(int densityY, int x, int y, uint32_t seed, const BakedGrainAtlas& atlas) {
     const int d = CLAMP(densityY + 8);
     const int transitionWidth = 20;
     int lo = grain_profile_index(d);
@@ -407,7 +407,7 @@ inline int select_profile_full_res(int densityY, int x, int y, uint32_t seed, co
     return threshold < mix ? hi : lo;
 }
 
-inline const std::vector<int8_t>& atlas_profile_for_index(const BakedGrainAtlas& atlas, int profileIndex) {
+static inline const std::vector<int8_t>& atlas_profile_for_index(const BakedGrainAtlas& atlas, int profileIndex) {
     switch (profileIndex) {
         case 0: return atlas.deepDense;
         case 1: return atlas.shadowDense;
@@ -419,7 +419,7 @@ inline const std::vector<int8_t>& atlas_profile_for_index(const BakedGrainAtlas&
 
 
 // --- THE TRUE ISO EMULSION MIXER ---
-inline int grain_profile_sample(int sx, int sy, int flatness, int amp, uint32_t seed, int grainSize) {
+static inline int grain_profile_sample(int sx, int sy, int flatness, int amp, uint32_t seed, int grainSize) {
     if (amp <= 0) return 0;
     const BakedGrainAtlas& atlas = baked_grain_atlas();
 
@@ -462,14 +462,14 @@ inline int grain_profile_sample(int sx, int sy, int flatness, int amp, uint32_t 
 // =========================================================
 
 // 1. FAST SHARP NOISE GENERATOR (Microscopic Crystals)
-inline int halide_crystal(int x, int y, uint32_t seed) {
+static inline int halide_crystal(int x, int y, uint32_t seed) {
     uint32_t h = (uint32_t)x * 374761393U + (uint32_t)y * 668265263U + seed;
     h = (h ^ (h >> 13)) * 1274126177U;
     return (int)((h ^ (h >> 16)) & 255) - 128;
 }
 
 // 2. KODAK PORTRA STRUCTURAL CLUSTERING (No spacing, no gaps, no blur)
-inline int portra_emulsion_sample(int sx, int sy, int grainSize, uint32_t seed) {
+static inline int portra_emulsion_sample(int sx, int sy, int grainSize, uint32_t seed) {
     int c1 = halide_crystal(sx, sy, seed);
 
     if (grainSize == 0) {
@@ -509,7 +509,7 @@ inline int portra_emulsion_sample(int sx, int sy, int grainSize, uint32_t seed) 
     return (clump * 220 + c1 * 36) >> 8;
 }
 
-inline int form_grain_luma_core(int centerY, int leftY, int rightY, int x, int abs_y, int s_grain, int grainSize, int scaleDenom, uint32_t seed) {
+static inline int form_grain_luma_core(int centerY, int leftY, int rightY, int x, int abs_y, int s_grain, int grainSize, int scaleDenom, uint32_t seed) {
     if (s_grain <= 0) return centerY;
 
     // Strict 1:1 Pixel Mapping. No stretching = NO CAMO, NO PAINT SPLATTERS.
@@ -605,14 +605,14 @@ inline int form_grain_luma_core(int centerY, int leftY, int rightY, int x, int a
     return CLAMP(formedY + residual);
 }
 
-inline int row_luma_rgb_at(const uint8_t* row, int width, int x) {
+static inline int row_luma_rgb_at(const uint8_t* row, int width, int x) {
     if (x < 0) x = 0;
     if (x >= width) x = width - 1;
     int i = x * 3;
     return (row[i] * 77 + row[i + 1] * 150 + row[i + 2] * 29) >> 8;
 }
 
-inline int grain_resolution_scale256(int scaleDenom) {
+static inline int grain_resolution_scale256(int scaleDenom) {
     switch (scaleDenom) {
         case 2: return 169;
         case 4: return 85;
@@ -621,13 +621,13 @@ inline int grain_resolution_scale256(int scaleDenom) {
 }
 
 // Helper for smooth legacy noise
-inline int hash_coord(int cx, int cy, uint32_t seed) {
+static inline int hash_coord(int cx, int cy, uint32_t seed) {
     uint32_t h = ((uint32_t)cx * 1274126177U) ^ ((uint32_t)cy * 2654435761U) ^ seed;
     h = (h ^ (h >> 13)) * 374761393U;
     return (int)(h & 0xFF) - 128;
 }
 
-inline int legacy_grain_noise(int x, int abs_y, int grainSize, uint32_t& seed) {
+static inline int legacy_grain_noise(int x, int abs_y, int grainSize, uint32_t& seed) {
     uint32_t salt_raw = fast_rand(&seed);
     int salt = (int)(salt_raw & 0xFF) - 128;
 
@@ -667,175 +667,51 @@ inline int legacy_grain_noise(int x, int abs_y, int grainSize, uint32_t& seed) {
 // ==========================================
 // OPTICAL BLOOM & TRUE HALATION ENGINE V5 (PHYSICALLY BASED)
 // ==========================================
-inline void apply_bloom_halation(
-    unsigned char** rows, uint8_t* out_row, int width, int abs_y, bool is_yuv, int bloom, int halation, uint32_t seed,
-    int* work_0, int* work_1, int* work_2, int* work_h, int* h_line, int scaleDenom)
-{
-    // 1. Resolution-Aware Alphas & Intensities
-    int alpha, b_mix;
-
-    if (bloom == 1) {        // Local 1/8 (Tight radius, extremely subtle mix)
-        alpha = (scaleDenom == 4) ? 180 : ((scaleDenom == 2) ? 210 : 230);
-        b_mix = 45;
-    } else if (bloom == 2) { // Full 1/8 (Wide radius, extremely subtle mix)
-        alpha = (scaleDenom == 4) ? 230 : ((scaleDenom == 2) ? 245 : 252);
-        b_mix = 45;
-    } else if (bloom == 3) { // Local 1/4 (Tight radius, subtle mix)
-        alpha = (scaleDenom == 4) ? 180 : ((scaleDenom == 2) ? 210 : 230);
-        b_mix = 90;
-    } else if (bloom == 4) { // Full 1/4 (Wide radius, subtle mix)
-        alpha = (scaleDenom == 4) ? 230 : ((scaleDenom == 2) ? 245 : 252);
-        b_mix = 90;
-    } else if (bloom == 5) { // Local 1/2 (Tight radius, heavy mix)
-        alpha = (scaleDenom == 4) ? 180 : ((scaleDenom == 2) ? 210 : 230);
-        b_mix = 160;
-    } else if (bloom == 6) { // Full 1/2 (Wide radius, heavy mix)
-        alpha = (scaleDenom == 4) ? 230 : ((scaleDenom == 2) ? 245 : 252);
-        b_mix = 160;
-    } else {
-        alpha = 0; b_mix = 0;
-    }
+// Fast 2D IIR Blur for downsampled maps
+static inline void fast_blur_2d_iir(uint8_t* map, int w, int h, int alpha) {
+    if (!map || w <= 0 || h <= 0 || alpha <= 0) return;
     int inv_alpha = 256 - alpha;
+    uint8_t* temp = (uint8_t*)malloc(w * h);
+    if (!temp) return;
 
-    // Halation alpha remains independent
-    int h_alpha;
-    if (halation == 1) h_alpha = (scaleDenom == 4) ? 140 : ((scaleDenom == 2) ? 180 : 220);
-    else               h_alpha = (scaleDenom == 4) ? 197 : ((scaleDenom == 2) ? 221 : 240);
-    int inv_h = 256 - h_alpha;
-
-    if (!work_0 || !work_h) return;
-
-    // 2. Vertical Summation: Extracting Pure Light Maps (High Precision)
-    for (int x = 0; x < width; x++) {
-        long long s0 = 0, sh = 0;
-        for (int y = 0; y <= 20; y++) {
-            int w = (y <= 10) ? (y + 1) : (21 - y); // Triangle weight
-            int v0 = rows[y][x*3], v1 = rows[y][x*3+1], v2 = rows[y][x*3+2];
-
-            // Calculate true brightness (Luma)
-            int lum = is_yuv ? v0 : ((v0*77 + v1*150 + v2*29) / 256);
-
-            // --- V6 "SMART" LUMINANCE-DEPENDENT BLOOM EMISSION ---
-            int bloom_emission;
-
-            if (bloom > 0 && bloom % 2 == 0) {
-                // FULL BLOOM (Evens: 2, 4, 6): Leaves shadows linear to maintain global image softening,
-                // but violently boosts highlights into the HDR range.
-                if (lum < 128) {
-                    bloom_emission = lum;
-                } else {
-                    bloom_emission = lum + (((lum - 128) * (lum - 128)) >> 6);
-                }
-            } else {
-                // LOCAL BLOOM (Odds: 1, 3, 5): Crushes shadow emission geometrically for deep contrast,
-                // only glowing from bright practical light sources.
-                if (lum < 128) {
-                    bloom_emission = (lum * lum) >> 7;
-                } else {
-                    bloom_emission = lum + (((lum - 128) * (lum - 128)) >> 6);
-                }
-            }
-
-            s0 += bloom_emission * w;
-
-            // Halation remains untouched (it only pulls from extreme highlights)
-            if (lum > 210) {
-                sh += (lum - 210) * 5 * w;
-            }
+    // Horizontal
+    for (int y = 0; y < h; y++) {
+        int row_idx = y * w;
+        int val = map[row_idx];
+        for (int x = 1; x < w; x++) {
+            val = (val * alpha + map[row_idx + x] * inv_alpha + 128) / 256;
+            map[row_idx + x] = val;
         }
-
-        work_0[x] = (int)s0;
-        work_h[x] = (int)sh;
-    }
-
-    // 3. Horizontal IIR Blur (Spreading the high-precision light maps)
-    if (bloom > 0) {
-        int a0 = work_0[0];
-        for (int x = 1; x < width; x++) {
-            a0 = (a0 * alpha + work_0[x] * inv_alpha + 128) / 256;
-            work_0[x] = a0;
-        }
-        a0 = work_0[width-1];
-        for (int x = width-2; x >= 0; x--) {
-            a0 = (a0 * alpha + work_0[x] * inv_alpha + 128) / 256;
-            work_0[x] = a0;
+        val = map[row_idx + w - 1];
+        for (int x = w - 2; x >= 0; x--) {
+            val = (val * alpha + map[row_idx + x] * inv_alpha + 128) / 256;
+            map[row_idx + x] = val;
         }
     }
 
-    if (halation > 0) {
-        int ah = work_h[0];
-        for (int x = 1; x < width; x++) {
-            ah = (ah * h_alpha + work_h[x] * inv_h + 128) / 256;
-            work_h[x] = ah;
+    // Vertical
+    for (int x = 0; x < w; x++) {
+        int val = map[x];
+        temp[x] = val;
+        for (int y = 1; y < h; y++) {
+            int idx = y * w + x;
+            val = (val * alpha + map[idx] * inv_alpha + 128) / 256;
+            temp[idx] = val;
         }
-        ah = work_h[width-1];
-        for (int x = width-2; x >= 0; x--) {
-            ah = (ah * h_alpha + work_h[x] * inv_h + 128) / 256;
-            work_h[x] = ah;
-        }
-    }
-
-    // 4. Volumetric Reconstruction
-    int h_mix = (halation == 1) ? 120 : 200;
-
-    for (int x = 0; x < width; x++) {
-        int v0_o = rows[10][x*3], v1_o = rows[10][x*3+1], v2_o = rows[10][x*3+2];
-        int orig_y = is_yuv ? v0_o : ((v0_o*77 + v1_o*150 + v2_o*29)/256);
-
-        int blur_y = work_0[x] / 121;
-        int halation_y = work_h[x] / 121;
-
-        int b_bleed = blur_y - orig_y;
-        if (b_bleed < 0) b_bleed = 0;
-
-        int h_eff = (halation_y * h_mix) / 256;
-        h_eff = (h_eff * (255 - orig_y)) / 256;
-
-        if (is_yuv) {
-            int y_res = v0_o, cb_res = v1_o, cr_res = v2_o;
-
-            if (bloom > 0 && b_bleed > 0) {
-                int add_y = (b_bleed * b_mix) / 256;
-                y_res += add_y;
-                cb_res = cb_res + ((128 - cb_res) * add_y) / 256;
-                cr_res = cr_res + ((128 - cr_res) * add_y) / 256;
-            }
-
-            if (halation > 0 && h_eff > 0) {
-                y_res += h_eff / 3;
-                cr_res += h_eff;
-                cb_res -= h_eff / 2;
-            }
-
-            out_row[x*3]   = (uint8_t)CLAMP(y_res);
-            out_row[x*3+1] = (uint8_t)CLAMP(cb_res);
-            out_row[x*3+2] = (uint8_t)CLAMP(cr_res);
-        } else {
-            // RGB Path
-            int r_res = v0_o, g_res = v1_o, b_res = v2_o;
-
-            if (bloom > 0 && b_bleed > 0) {
-                int add = (b_bleed * b_mix) / 256;
-                r_res += add;
-                g_res += add;
-                b_res += add;
-            }
-
-            if (halation > 0 && h_eff > 0) {
-                r_res += h_eff;
-                g_res += h_eff / 5;
-                b_res -= h_eff / 5;
-            }
-
-            out_row[x*3]   = (uint8_t)CLAMP(r_res);
-            out_row[x*3+1] = (uint8_t)CLAMP(g_res);
-            out_row[x*3+2] = (uint8_t)CLAMP(b_res);
+        val = temp[(h - 1) * w + x];
+        map[(h - 1) * w + x] = val;
+        for (int y = h - 2; y >= 0; y--) {
+            int idx = y * w + x;
+            val = (val * alpha + temp[idx] * inv_alpha + 128) / 256;
+            map[idx] = val;
         }
     }
+    free(temp);
 }
 
+
 // High-fidelity sampler for 1024x1024 textures to prevent aliasing on Proxy/Half
-inline void sample_tex_bilinear_1024(const uint8_t* tex, int x_fp8, int y_fp8, int* outRGB) {
+static inline void sample_tex_bilinear_1024(const uint8_t* tex, int x_fp8, int y_fp8, int* outRGB) {
     int x0 = (x_fp8 >> 8) & 1023;
     int y0 = (y_fp8 >> 8) & 1023;
     int x1 = (x0 + 1) & 1023;
@@ -858,7 +734,7 @@ inline void sample_tex_bilinear_1024(const uint8_t* tex, int x_fp8, int y_fp8, i
 static uint8_t overlayBlendLut[65536];
 static bool overlayBlendLutReady = false;
 
-inline void ensure_overlay_blend_lut() {
+static inline void ensure_overlay_blend_lut() {
     if (overlayBlendLutReady) return;
     for (int base = 0; base < 256; base++) {
         for (int blend = 0; blend < 256; blend++) {
@@ -868,16 +744,12 @@ inline void ensure_overlay_blend_lut() {
     overlayBlendLutReady = true;
 }
 
-inline int blend_overlay_cached(int base, int blend) {
+static inline int blend_overlay_cached(int base, int blend) {
     return overlayBlendLut[(CLAMP(base) << 8) | CLAMP(blend)];
 }
 
-inline int blend_overlay_cached_texture(int base, uint8_t blend) {
-    return overlayBlendLut[(CLAMP(base) << 8) | blend];
-}
-
 // High-fidelity sampler for 512x512 textures with built-in XOR mirroring.
-inline void sample_tex_bilinear_512_xor(const uint8_t* tex, int x_fp8, int y_fp8, int* outRGB) {
+static inline void sample_tex_bilinear_512_xor(const uint8_t* tex, int x_fp8, int y_fp8, int* outRGB) {
     int px0 = x_fp8 >> 8;
     int py0 = y_fp8 >> 8;
     int px1 = px0 + 1;
@@ -913,7 +785,7 @@ inline void sample_tex_bilinear_512_xor(const uint8_t* tex, int x_fp8, int y_fp8
     }
 }
 
-inline void sample_tex_nearest_1024(const uint8_t* tex, int px, int py, int* outRGB) {
+static inline void sample_tex_nearest_1024(const uint8_t* tex, int px, int py, int* outRGB) {
     int tx = px & 1023;
     int ty = py & 1023;
     int tex_idx = (ty * 1024 + tx) * 3;
@@ -922,7 +794,7 @@ inline void sample_tex_nearest_1024(const uint8_t* tex, int px, int py, int* out
     outRGB[2] = tex[tex_idx + 2];
 }
 
-inline void sample_tex_nearest_1024_transform(const uint8_t* tex, int px, int py, int transform, int* outRGB) {
+static inline void sample_tex_nearest_1024_transform(const uint8_t* tex, int px, int py, int transform, int* outRGB) {
     int tx = px & 1023;
     int ty = py & 1023;
     if (transform & 1) tx = 1023 - tx;
@@ -933,7 +805,7 @@ inline void sample_tex_nearest_1024_transform(const uint8_t* tex, int px, int py
     outRGB[2] = tex[tex_idx + 2];
 }
 
-inline void sample_tex_nearest_512_xor(const uint8_t* tex, int px, int py, int* outRGB) {
+static inline void sample_tex_nearest_512_xor(const uint8_t* tex, int px, int py, int* outRGB) {
     int tx = px & 511;
     int ty = py & 511;
     if (((px >> 9) ^ (py >> 9)) & 1) tx = 511 - tx;
@@ -944,7 +816,7 @@ inline void sample_tex_nearest_512_xor(const uint8_t* tex, int px, int py, int* 
     outRGB[2] = tex[tex_idx + 2];
 }
 
-inline void sample_tex_nearest_512_xor_transform(const uint8_t* tex, int px, int py, int transform, int* outRGB) {
+static inline void sample_tex_nearest_512_xor_transform(const uint8_t* tex, int px, int py, int transform, int* outRGB) {
     int px2 = px & 2047;
     int py2 = py & 2047;
     if (transform & 1) px2 = 2047 - px2;
@@ -960,13 +832,13 @@ inline void sample_tex_nearest_512_xor_transform(const uint8_t* tex, int px, int
     outRGB[2] = tex[tex_idx + 2];
 }
 
-inline const uint8_t* sample_tex_ptr_nearest_1024(const uint8_t* tex, int px, int py) {
+static inline const uint8_t* sample_tex_ptr_nearest_1024(const uint8_t* tex, int px, int py) {
     int tx = px & 1023;
     int ty = py & 1023;
     return tex + ((ty * 1024 + tx) * 3);
 }
 
-inline const uint8_t* sample_tex_ptr_nearest_1024_transform(const uint8_t* tex, int px, int py, int transform) {
+static inline const uint8_t* sample_tex_ptr_nearest_1024_transform(const uint8_t* tex, int px, int py, int transform) {
     int tx = px & 1023;
     int ty = py & 1023;
     if (transform & 1) tx = 1023 - tx;
@@ -974,17 +846,15 @@ inline const uint8_t* sample_tex_ptr_nearest_1024_transform(const uint8_t* tex, 
     return tex + ((ty * 1024 + tx) * 3);
 }
 
-inline const uint8_t* sample_tex_ptr_nearest_512_xor(const uint8_t* tex, int px, int py) {
-    int pxSector = px >> 9;
-    int pySector = py >> 9;
+static inline const uint8_t* sample_tex_ptr_nearest_512_xor(const uint8_t* tex, int px, int py) {
     int tx = px & 511;
     int ty = py & 511;
-    if ((pxSector ^ pySector) & 1) tx = 511 - tx;
-    if (((pxSector * 3) ^ pySector) & 2) ty = 511 - ty;
+    if (((px >> 9) ^ (py >> 9)) & 1) tx = 511 - tx;
+    if ((((px >> 9) * 3) ^ (py >> 9)) & 2) ty = 511 - ty;
     return tex + ((ty * 512 + tx) * 3);
 }
 
-inline const uint8_t* sample_tex_ptr_nearest_512_xor_transform(const uint8_t* tex, int px, int py, int transform) {
+static inline const uint8_t* sample_tex_ptr_nearest_512_xor_transform(const uint8_t* tex, int px, int py, int transform) {
     int px2 = px & 2047;
     int py2 = py & 2047;
     if (transform & 1) px2 = 2047 - px2;
@@ -1000,7 +870,7 @@ inline const uint8_t* sample_tex_ptr_nearest_512_xor_transform(const uint8_t* te
 // ==========================================
 // PATH A: RGB + LUT + ANALOG PHYSICS
 // ==========================================
-inline void process_row_rgb(
+static inline void process_row_rgb(
     uint8_t* row, int width, int abs_y, long long cx, long long cy_center, long long vig_coef,
     int shadowToe, int rollOff, int colorChrome, int chromeBlue,
     int subtractiveSat, int halation, int vignette,
@@ -1009,7 +879,9 @@ inline void process_row_rgb(
     const uint8_t* nativeLut, int nativeLutSize, int lutMax, int lutSize2,
     const uint8_t* externalGrainTexture = NULL,
     bool is_1024_grain = false,
-    int grainTransform = 0)
+    int grainTransform = 0,
+    bool is_mono = false,
+    uint8_t* bloom_map = NULL, uint8_t* halation_map = NULL, int map_w = 0, int map_h = 0, int bloom = 0)
 {
     int s_roll   = rollOff * 20;
     int s_chrome = colorChrome * 40;
@@ -1019,6 +891,28 @@ inline void process_row_rgb(
     s_grain = (s_grain * grain_resolution_scale256(scaleDenom) + 128) >> 8;
     const int texture_base_mix = (grain >= 5) ? 256 : (grain * 51);
 
+    // Pre-compute tone curve LUT (shadowToe + rollOff) once per row.
+    // Eliminates per-pixel integer divisions (/ 140, / 180, / 11000) and branches.
+    // ratio256[i] = (tone_lut[i] * 256) / i, usable when color effects don't further
+    // modify targetY (checked below via the no_color_fx flag).
+    uint8_t  tone_lut[256];
+    uint16_t ratio256[256];
+    {
+        const int lift     = (shadowToe == 1) ? 35 : 55;
+        const int liftDiv  = (shadowToe == 1) ? 140 : 180;
+        for (int i = 0; i < 256; i++) {
+            int t = i;
+            if (shadowToe > 0 && t < lift)
+                t += ((lift - t) * (lift - t)) / liftDiv;
+            if (rollOff > 0 && t > 200)
+                t -= ((t - 200) * (t - 200) * s_roll) / 11000;
+            if (t < 8) t = 8;
+            tone_lut[i]  = (uint8_t)CLAMP(t);
+            ratio256[i]  = (uint16_t)((tone_lut[i] * 256) / (i == 0 ? 1 : i));
+        }
+    }
+    const bool no_color_fx = (s_chrome == 0 && s_blue == 0 && s_sat == 0);
+
     long long dy = (long long)(abs_y - cy_center);
     long long d_sq = ((long long)(0 - cx) * (long long)(0 - cx)) + (dy * dy);
     long long d_sq_step = 1 - (2 * (long long)cx);
@@ -1026,6 +920,24 @@ inline void process_row_rgb(
     int prevRawY = row_luma_rgb_at(row, width, 0);
     int currRawY = prevRawY;
     int nextRawY = row_luma_rgb_at(row, width, 1);
+
+    // Hoisted bloom map calculations to prevent per-pixel overhead
+    int map_y0 = 0, map_y1 = 0, map_fy = 0, map_x_step = 0;
+    uint8_t* b_row0 = NULL; uint8_t* b_row1 = NULL;
+    uint8_t* h_row0 = NULL; uint8_t* h_row1 = NULL;
+    if (bloom_map && halation_map && map_w > 0 && map_h > 0) {
+        int map_y_fp8 = abs_y * scaleDenom * 32;
+        map_y0 = map_y_fp8 >> 8;
+        map_y1 = map_y0 + 1;
+        if (map_y0 >= map_h) map_y0 = map_h - 1;
+        if (map_y1 >= map_h) map_y1 = map_h - 1;
+        map_fy = map_y_fp8 & 255;
+        map_x_step = scaleDenom * 32;
+        b_row0 = bloom_map + map_y0 * map_w;
+        b_row1 = bloom_map + map_y1 * map_w;
+        h_row0 = halation_map + map_y0 * map_w;
+        h_row1 = halation_map + map_y1 * map_w;
+    }
 
     for (int x = 0; x < width; x++) {
         int i = x * 3;
@@ -1051,6 +963,8 @@ inline void process_row_rgb(
                 b = CLAMP((b * scale_b) >> 8);
             }
         }
+
+        int origY = currRawY; // Original Luma before LUT for bloom bleed calculation
 
         // --- LUT CALCS ---
         int fX = map[r], fY = map[g], fZ = map[b];
@@ -1081,13 +995,7 @@ inline void process_row_rgb(
         int outB = b + ((((p[2]*w0 + p1_v[2]*w1 + p2_v[2]*w2 + p3_v[2]*w3) >> 7) - b) * opac_mapped >> 8);
 
         int currentY = (outR*77 + outG*150 + outB*29) >> 8;
-        int targetY = currentY;
-
-        if (shadowToe > 0) {
-            int lift = (shadowToe == 1) ? 35 : 55;
-            if (targetY < lift) targetY += ((lift - targetY) * (lift - targetY)) / (shadowToe == 1 ? 140 : 180);
-        }
-        if (rollOff > 0 && targetY > 200) targetY -= ((targetY - 200) * (targetY - 200) * s_roll) / 11000;
+        int targetY  = tone_lut[currentY]; // replaces inline shadowToe + rollOff math
 
         // --- OPTIMIZATION: Only run heavy color math if effects are ON ---
         if (s_chrome > 0 || s_blue > 0 || s_sat > 0) {
@@ -1116,15 +1024,13 @@ inline void process_row_rgb(
             }
         }
 
-        if (targetY < 8) targetY = 8;
         if (targetY != currentY) {
-            int r256 = (targetY * 256) / (currentY == 0 ? 1 : currentY);
+            // Use pre-computed ratio when color effects haven't further changed targetY,
+            // otherwise fall back to the division (color effects make targetY unpredictable).
+            int r256 = (no_color_fx || targetY == tone_lut[currentY])
+                ? ratio256[currentY]
+                : (targetY * 256) / (currentY == 0 ? 1 : currentY);
             outR = (outR * r256) >> 8; outG = (outG * r256) >> 8; outB = (outB * r256) >> 8;
-        }
-
-        if (halation > 0 && targetY > 245) {
-            int push = (targetY - 245) * (halation == 1 ? 3 : 6);
-            outR += push; outG -= (push >> 2); outB -= (push >> 1);
         }
 
         if (vignette > 0) {
@@ -1134,6 +1040,92 @@ inline void process_row_rgb(
 
             d_sq += d_sq_step;
             d_sq_step += 2;
+        }
+
+        // --- DOWNSAMPLED BLOOM & HALATION APPLICATION ---
+        if (bloom_map && halation_map && map_w > 0 && map_h > 0) {
+            int map_x_fp8 = x * scaleDenom * 32; // * 256 / 8 = 32
+            int map_y_fp8 = abs_y * scaleDenom * 32;
+
+            int x0 = map_x_fp8 >> 8;
+            int y0 = map_y_fp8 >> 8;
+            int x1 = x0 + 1;
+            int y1 = y0 + 1;
+            if (x0 >= map_w) x0 = map_w - 1;
+            if (x1 >= map_w) x1 = map_w - 1;
+            if (y0 >= map_h) y0 = map_h - 1;
+            if (y1 >= map_h) y1 = map_h - 1;
+
+            int fx = map_x_fp8 & 255;
+            int fy = map_y_fp8 & 255;
+
+            // Sample bloom
+            int b00 = bloom_map[y0 * map_w + x0];
+            int b10 = bloom_map[y0 * map_w + x1];
+            int b01 = bloom_map[y1 * map_w + x0];
+            int b11 = bloom_map[y1 * map_w + x1];
+            int b_top = b00 + (((b10 - b00) * fx) >> 8);
+            int b_bot = b01 + (((b11 - b01) * fx) >> 8);
+            int blur_y = b_top + (((b_bot - b_top) * fy) >> 8);
+
+            // Sample halation
+            int h00 = halation_map[y0 * map_w + x0];
+            int h10 = halation_map[y0 * map_w + x1];
+            int h01 = halation_map[y1 * map_w + x0];
+            int h11 = halation_map[y1 * map_w + x1];
+            int h_top = h00 + (((h10 - h00) * fx) >> 8);
+            int h_bot = h01 + (((h11 - h01) * fx) >> 8);
+            int halation_y = h_top + (((h_bot - h_top) * fy) >> 8);
+            // FULL BLOOM (modes 2/4/6) — broad analog softening, takes digital edge off.
+            // Bright_factor mask removed: the threshold in pass 1 already prevents
+            // midtone contamination, and the mask was suppressing the visible halo
+            // around bright objects (the most cinematically valuable part).
+            const bool is_full_bloom = (bloom == 2 || bloom == 4 || bloom == 6);
+            if (is_full_bloom) {
+                int b_bleed = blur_y - origY;
+                if (b_bleed < 0) b_bleed = 0;
+                int b_mix = (bloom == 6) ? 30 : (bloom == 4) ? 60 : 100; // 1/8, 1/4, 1/2
+                int add = (b_bleed * b_mix) >> 8;
+                outR = CLAMP(outR + add);
+                outG = CLAMP(outG + add);
+                outB = CLAMP(outB + add);
+            }
+
+            // HALATION — warm amber glow against bright highlights.
+            // In mono/sepia mode the amber cast is dropped: halation effectively
+            // becomes a narrow highlight diffusion (neutral add, no color shift).
+            int h_mix = (halation == 1) ? 120 : 200;
+            int h_eff = (halation_y * h_mix) / 256;
+            h_eff = (h_eff * (255 - origY)) / 256;
+
+            if (halation > 0 && h_eff > 0) {
+                if (!is_mono) {
+                    // Color path: warm amber — full red, partial green, slight blue.
+                    outR = CLAMP(outR + h_eff);
+                    outG = CLAMP(outG + ((h_eff * 100) >> 8));
+                    outB = CLAMP(outB + ((h_eff * 30) >> 8));
+                } else {
+                    // Mono/sepia path: neutral diffusion — amber cast would clash with
+                    // the desaturated palette, so the same map is applied symmetrically.
+                    int diffuse = h_eff / 3;
+                    outR = CLAMP(outR + diffuse);
+                    outG = CLAMP(outG + diffuse);
+                    outB = CLAMP(outB + diffuse);
+                }
+            }
+        }
+
+        // LOCAL BLOOM (modes 1/3/5) — sparkles & specular highlights only.
+        // Operates inline on full-res luma because an 8x8 average map cannot see
+        // single-pixel highlights. Pure highlight enhancement, no spread.
+        const bool is_local_bloom = (bloom == 1 || bloom == 3 || bloom == 5);
+        if (is_local_bloom && origY > 200) {
+            int over = origY - 200;
+            int b_mix_local = (bloom == 5) ? 30 : (bloom == 3) ? 60 : 100; // 1/8, 1/4, 1/2
+            int boost = (over * over * b_mix_local) >> 8;
+            outR = CLAMP(outR + boost);
+            outG = CLAMP(outG + boost);
+            outB = CLAMP(outB + boost);
         }
 
         // NEW: Engine 2 (Texture Overlay)
@@ -1199,7 +1191,7 @@ inline void process_row_rgb(
 // ==========================================
 // PATH B: THE YUV EXPRESSWAY
 // ==========================================
-inline void process_row_yuv(
+static inline void process_row_yuv(
     uint8_t* row, int width, int abs_y, long long cx, long long cy_center, long long vig_coef,
     int shadowToe, int rollOff, int colorChrome, int chromeBlue,
     int subtractiveSat, int halation, int vignette,
@@ -1207,7 +1199,9 @@ inline void process_row_yuv(
     const uint8_t* rolloff_lut,
     const uint8_t* externalGrainTexture = NULL,
     bool is_1024_grain = false,
-    int grainTransform = 0)
+    int grainTransform = 0,
+    bool is_mono = false,
+    uint8_t* bloom_map = NULL, uint8_t* halation_map = NULL, int map_w = 0, int map_h = 0, int bloom = 0)
 {
     int s_chrome = colorChrome * 40;
     int s_blue   = chromeBlue * 40;
@@ -1225,6 +1219,24 @@ inline void process_row_yuv(
     int prevInputY = row[0];
     int currInputY = row[0];
     int nextInputY = (width > 1) ? row[3] : row[0];
+
+    // Hoisted bloom map calculations to prevent per-pixel overhead
+    int map_y0 = 0, map_y1 = 0, map_fy = 0, map_x_step = 0;
+    uint8_t* b_row0 = NULL; uint8_t* b_row1 = NULL;
+    uint8_t* h_row0 = NULL; uint8_t* h_row1 = NULL;
+    if (bloom_map && halation_map && map_w > 0 && map_h > 0) {
+        int map_y_fp8 = abs_y * scaleDenom * 32;
+        map_y0 = map_y_fp8 >> 8;
+        map_y1 = map_y0 + 1;
+        if (map_y0 >= map_h) map_y0 = map_h - 1;
+        if (map_y1 >= map_h) map_y1 = map_h - 1;
+        map_fy = map_y_fp8 & 255;
+        map_x_step = scaleDenom * 32;
+        b_row0 = bloom_map + map_y0 * map_w;
+        b_row1 = bloom_map + map_y1 * map_w;
+        h_row0 = halation_map + map_y0 * map_w;
+        h_row1 = halation_map + map_y1 * map_w;
+    }
 
     for(int x = 0; x < width; x++) {
         int i = x * 3;
@@ -1276,15 +1288,85 @@ inline void process_row_yuv(
             }
         }
 
-        if (outY < 8) outY = 8;
-        if (halation > 0 && outY > 245) {
-            int push = (outY - 245) * (halation == 1 ? 3 : 6);
-            cr += push; cb -= (push >> 1);
-        }
-
         if (oldY != outY) {
             int r256 = (outY * 256) / (oldY == 0 ? 1 : oldY);
             cb = (cb * r256) >> 8; cr = (cr * r256) >> 8;
+        }
+
+        // --- DOWNSAMPLED BLOOM & HALATION APPLICATION (YUV Space) ---
+        if (b_row0) {
+            int map_x_fp8 = x * map_x_step;
+
+            int x0 = map_x_fp8 >> 8;
+            int x1 = x0 + 1;
+            if (x0 >= map_w) x0 = map_w - 1;
+            if (x1 >= map_w) x1 = map_w - 1;
+
+            int fx = map_x_fp8 & 255;
+
+            // Sample bloom
+            int b00 = b_row0[x0];
+            int b10 = b_row0[x1];
+            int b01 = b_row1[x0];
+            int b11 = b_row1[x1];
+            int b_top = b00 + (((b10 - b00) * fx) >> 8);
+            int b_bot = b01 + (((b11 - b01) * fx) >> 8);
+            int blur_y = b_top + (((b_bot - b_top) * map_fy) >> 8);
+
+            // Sample halation
+            int h00 = h_row0[x0];
+            int h10 = h_row0[x1];
+            int h01 = h_row1[x0];
+            int h11 = h_row1[x1];
+            int h_top = h00 + (((h10 - h00) * fx) >> 8);
+            int h_bot = h01 + (((h11 - h01) * fx) >> 8);
+            int halation_y = h_top + (((h_bot - h_top) * map_fy) >> 8);
+            // FULL BLOOM (modes 2/4/6) — broad analog softening, takes digital edge off.
+            // Bright_factor mask removed: the threshold in pass 1 already prevents
+            // midtone contamination.
+            const bool is_full_bloom = (bloom == 2 || bloom == 4 || bloom == 6);
+            if (is_full_bloom) {
+                int b_bleed = blur_y - oldY;
+                if (b_bleed < 0) b_bleed = 0;
+                int b_mix = (bloom == 6) ? 30 : (bloom == 4) ? 60 : 100; // 1/8, 1/4, 1/2
+                int add_y = (b_bleed * b_mix) >> 8;
+                outY = CLAMP(outY + add_y);
+                cb = cb + ((-cb) * add_y) / 256; // Pull saturation toward neutral (bloom desaturates)
+                cr = cr + ((-cr) * add_y) / 256;
+            }
+
+            // HALATION — warm amber glow against highlights.
+            // In mono/sepia, amber would clash with the desaturated palette,
+            // so the chroma push is dropped: halation becomes pure highlight diffusion (luma-only).
+            int h_mix = (halation == 1) ? 120 : 200;
+            int h_eff = (halation_y * h_mix) / 256;
+            h_eff = (h_eff * (255 - oldY)) / 256;
+
+            if (halation > 0 && h_eff > 0) {
+                outY = CLAMP(outY + h_eff / 3);
+                if (!is_mono) {
+                    // Color path: warm amber via cr+ / cb-, signed-clamped to chroma range.
+                    cr = cr + ((h_eff * 128) >> 8);
+                    cb = cb - ((h_eff * 30) >> 8);
+                    if (cr >  127) cr =  127; else if (cr < -128) cr = -128;
+                    if (cb >  127) cb =  127; else if (cb < -128) cb = -128;
+                }
+                // Mono/sepia: chroma left untouched — luma bump alone is the diffusion.
+            }
+        }
+
+        // LOCAL BLOOM (modes 1/3/5) — sparkles & specular highlights only.
+        // Inline on full-res luma so single-pixel speculars survive (the 8x8 map
+        // averages them away). Pure highlight enhancement, no spread.
+        const bool is_local_bloom = (bloom == 1 || bloom == 3 || bloom == 5);
+        if (is_local_bloom && oldY > 200) {
+            int over = oldY - 200;
+            int b_mix_local = (bloom == 5) ? 30 : (bloom == 3) ? 60 : 100; // 1/8, 1/4, 1/2
+            int boost = (over * over * b_mix_local) >> 8;
+            outY = CLAMP(outY + boost);
+            // Desaturate slightly toward white as the highlight blooms.
+            cb = cb + ((-cb) * boost) / 256;
+            cr = cr + ((-cr) * boost) / 256;
         }
 
         // NEW: Engine 2 (Texture Overlay)
@@ -1361,7 +1443,7 @@ struct YuvTextureFastLut {
     uint16_t ratio256[256];
 };
 
-inline void build_yuv_texture_fast_lut(
+static inline void build_yuv_texture_fast_lut(
     YuvTextureFastLut& out,
     int shadowToe,
     int rollOff,
@@ -1388,7 +1470,7 @@ inline void build_yuv_texture_fast_lut(
     }
 }
 
-inline void process_row_yuv_texture_fast(
+static inline void process_row_yuv_texture_fast(
     uint8_t* row, int width, int abs_y,
     int grain, int scaleDenom,
     const YuvTextureFastLut& fastLut,
@@ -1425,9 +1507,9 @@ inline void process_row_yuv_texture_fast(
             int g = outY - ((cb * 88 + cr * 183) >> 8);
             int b = outY + ((cb * 454) >> 8);
 
-            int blendedR = blend_overlay_cached_texture(r, gRGB[0]);
-            int blendedG = blend_overlay_cached_texture(g, gRGB[1]);
-            int blendedB = blend_overlay_cached_texture(b, gRGB[2]);
+            int blendedR = blend_overlay_cached(r, gRGB[0]);
+            int blendedG = blend_overlay_cached(g, gRGB[1]);
+            int blendedB = blend_overlay_cached(b, gRGB[2]);
 
             int mix = fastLut.grainMix[oldY];
             r = r + (((blendedR - r) * mix) >> 8);
@@ -1443,6 +1525,130 @@ inline void process_row_yuv_texture_fast(
         p[1] = (uint8_t)CLAMP(128 + cb);
         p[2] = (uint8_t)CLAMP(128 + cr);
         texX = (texX + texStep) & texPeriodMask;
+    }
+}
+
+// ==========================================
+// GRAIN-ONLY PASSES (for bloom path: grain applied AFTER bloom)
+// In real film: LUT → tone → color → vignette → bloom → GRAIN (last)
+// ==========================================
+
+// Grain-only pass for RGB data (post-bloom).
+// Applies Engine 2 (texture overlay) or Legacy (algorithmic) grain.
+// Engine 1 (crystal, advancedGrainExperimental==1) is pre-LUT and stays in the main kernel.
+static inline void process_grain_only_rgb(
+    uint8_t* row, int width, int abs_y,
+    int grain, int grainSize, int scaleDenom, int advancedGrainExperimental, uint32_t& seed,
+    const uint8_t* externalGrainTexture = NULL,
+    bool is_1024_grain = false,
+    int grainTransform = 0)
+{
+    int s_grain = (grain * 40) + (grain * grain * 12);
+    s_grain = (s_grain * grain_resolution_scale256(scaleDenom) + 128) >> 8;
+    if (s_grain <= 0) return;
+    const int texture_base_mix = (grain >= 5) ? 256 : (grain * 51);
+
+    for (int x = 0; x < width; x++) {
+        int i = x * 3;
+        int outR = row[i], outG = row[i+1], outB = row[i+2];
+        int targetY = (outR*77 + outG*150 + outB*29) >> 8;
+
+        if (advancedGrainExperimental == 2 && externalGrainTexture != NULL) {
+            int env = grain_amount_mask(targetY);
+            if (env > 0) {
+                int gRGB[3];
+                int texX = x * scaleDenom;
+                int texY = abs_y * scaleDenom;
+                if (is_1024_grain) {
+                    if (grainTransform == 0) sample_tex_nearest_1024(externalGrainTexture, texX, texY, gRGB);
+                    else sample_tex_nearest_1024_transform(externalGrainTexture, texX, texY, grainTransform, gRGB);
+                } else {
+                    if (grainTransform == 0) sample_tex_nearest_512_xor(externalGrainTexture, texX, texY, gRGB);
+                    else sample_tex_nearest_512_xor_transform(externalGrainTexture, texX, texY, grainTransform, gRGB);
+                }
+
+                int blendedR = blend_overlay_cached(outR, gRGB[0]);
+                int blendedG = blend_overlay_cached(outG, gRGB[1]);
+                int blendedB = blend_overlay_cached(outB, gRGB[2]);
+
+                int mix = (texture_base_mix * env) >> 8;
+                outR = outR + (((blendedR - outR) * mix) >> 8);
+                outG = outG + (((blendedG - outG) * mix) >> 8);
+                outB = outB + (((blendedB - outB) * mix) >> 8);
+            }
+        } else if (advancedGrainExperimental == 0) {
+            int noise = legacy_grain_noise(x, abs_y, grainSize, seed);
+            int mask = (targetY < 128) ? targetY : (255 - targetY);
+            int gv = (noise * mask * s_grain) >> 15;
+            gv = (gv * 220) >> 8;
+            outR = CLAMP(outR + gv);
+            outG = CLAMP(outG + gv);
+            outB = CLAMP(outB + gv);
+        }
+
+        row[i] = (uint8_t)CLAMP(outR); row[i+1] = (uint8_t)CLAMP(outG); row[i+2] = (uint8_t)CLAMP(outB);
+    }
+}
+
+// Grain-only pass for YUV data (post-bloom).
+static inline void process_grain_only_yuv(
+    uint8_t* row, int width, int abs_y,
+    int grain, int grainSize, int scaleDenom, int advancedGrainExperimental, uint32_t& seed,
+    const uint8_t* externalGrainTexture = NULL,
+    bool is_1024_grain = false,
+    int grainTransform = 0)
+{
+    int s_grain = (grain * 40) + (grain * grain * 12);
+    s_grain = (s_grain * grain_resolution_scale256(scaleDenom) + 128) >> 8;
+    if (s_grain <= 0) return;
+    const int texture_base_mix = (grain >= 5) ? 256 : (grain * 51);
+
+    for (int x = 0; x < width; x++) {
+        int i = x * 3;
+        int outY = row[i];
+        int cb = row[i+1] - 128;
+        int cr = row[i+2] - 128;
+
+        if (advancedGrainExperimental == 2 && externalGrainTexture != NULL) {
+            int env = grain_amount_mask(outY);
+            if (env > 0) {
+                int gRGB[3];
+                int texX = x * scaleDenom;
+                int texY = abs_y * scaleDenom;
+                if (is_1024_grain) {
+                    if (grainTransform == 0) sample_tex_nearest_1024(externalGrainTexture, texX, texY, gRGB);
+                    else sample_tex_nearest_1024_transform(externalGrainTexture, texX, texY, grainTransform, gRGB);
+                } else {
+                    if (grainTransform == 0) sample_tex_nearest_512_xor(externalGrainTexture, texX, texY, gRGB);
+                    else sample_tex_nearest_512_xor_transform(externalGrainTexture, texX, texY, grainTransform, gRGB);
+                }
+
+                int r = outY + ((cr * 359) >> 8);
+                int g = outY - ((cb * 88 + cr * 183) >> 8);
+                int b = outY + ((cb * 454) >> 8);
+
+                int blendedR = blend_overlay_cached(r, gRGB[0]);
+                int blendedG = blend_overlay_cached(g, gRGB[1]);
+                int blendedB = blend_overlay_cached(b, gRGB[2]);
+
+                int mix = (texture_base_mix * env) >> 8;
+                r = r + (((blendedR - r) * mix) >> 8);
+                g = g + (((blendedG - g) * mix) >> 8);
+                b = b + (((blendedB - b) * mix) >> 8);
+
+                outY = (r * 77 + g * 150 + b * 29) >> 8;
+                cb = ((-38 * r - 74 * g + 112 * b) >> 8);
+                cr = ((112 * r - 94 * g - 18 * b) >> 8);
+            }
+        } else if (advancedGrainExperimental == 0) {
+            int noise = legacy_grain_noise(x, abs_y, grainSize, seed);
+            int mask = (outY < 128) ? outY : (255 - outY);
+            int gv = (noise * mask * s_grain) >> 15;
+            gv = (gv * 220) >> 8;
+            outY = CLAMP(outY + gv);
+        }
+
+        row[i] = (uint8_t)CLAMP(outY); row[i+1] = (uint8_t)CLAMP(128+cb); row[i+2] = (uint8_t)CLAMP(128+cr);
     }
 }
 

@@ -5,7 +5,7 @@ android {
     buildToolsVersion "28.0.3"
 
     defaultConfig {
-        // Leave this for one more build so it gracefully updates your existing app!
+        // Keep the existing package id so this build updates the installed camera app.
         applicationId "com.jpgcookbook.sony"
         minSdkVersion 10
         targetSdkVersion 25
@@ -58,13 +58,15 @@ android {
 }
 
 repositories {
-    maven { url "https://jitpack.io" }
-    jcenter()
+    mavenCentral()
     google()
 }
 
 dependencies {
-    compileOnly 'com.github.ma1co.OpenMemories-Framework:stubs:master-SNAPSHOT'
+    // OpenMemories stubs vendored locally - no JitPack dependency at build time.
+    // Source: https://jitpack.io/com/github/ma1co/OpenMemories-Framework/stubs/master-SNAPSHOT/
+    // This is compile-only (never included in the APK) and the framework never changes.
+    compileOnly files('libs/stubs-master-SNAPSHOT.jar')
 
     // ALPHAOS DASHBOARD HTTP SERVER
     implementation 'org.nanohttpd:nanohttpd:2.3.1'

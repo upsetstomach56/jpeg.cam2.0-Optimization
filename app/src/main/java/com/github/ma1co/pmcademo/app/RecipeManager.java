@@ -19,6 +19,7 @@ public class RecipeManager {
 
     private int qualityIndex = 1;
     private int multiCoreEnabled = 0; // 0 = SINGLE-CORE, 1 = MULTI-CORE
+    private int fancyUpscaleEnabled = 0; // 0 = STD (FAST), 1 = HQ
     private int prefC1 = 0;
     private int prefC2 = 0;
     private int prefC3 = 0;
@@ -26,11 +27,13 @@ public class RecipeManager {
     private int prefFn = 0;
     private ArrayList<String> recipePaths = new ArrayList<String>();
     private ArrayList<String> recipeNames = new ArrayList<String>();
+    private static final String[] LEGACY_GRAIN_NAMES = new String[] { "SMALL", "MED", "LARGE" };
 
     public RecipeManager() {
         recipeDir = new File(Filepaths.getAppDir(), "RECIPES");
         if (!recipeDir.exists()) recipeDir.mkdirs();
 
+        DebugLog.writeStartupBanner();
         scanRecipes();
         loadPreferences();
         loadAllWorkspaces();
@@ -53,6 +56,12 @@ public class RecipeManager {
     public boolean isMultiCoreEnabled() { return multiCoreEnabled == 1; }
     public void setMultiCoreEnabled(boolean enabled) {
         this.multiCoreEnabled = enabled ? 1 : 0;
+        savePreferences();
+    }
+
+    public boolean isFancyUpscaleEnabled() { return fancyUpscaleEnabled == 1; }
+    public void setFancyUpscaleEnabled(boolean enabled) {
+        this.fancyUpscaleEnabled = enabled ? 1 : 0;
         savePreferences();
     }
 
@@ -120,6 +129,12 @@ public class RecipeManager {
                 }
             }
         }
+
+        // Log what was found so users can share DEBUG.TXT when reporting LUT issues
+        DebugLog.write("SCAN LUTS: found " + (recipePaths.size() - 1) + " file(s)");
+        for (int i = 1; i < recipePaths.size(); i++) {
+            DebugLog.write("  [" + i + "] name=\"" + recipeNames.get(i) + "\"  path=" + recipePaths.get(i));
+        }
     }
 
     // --- WORKSPACE MANAGEMENT ---
@@ -147,7 +162,10 @@ public class RecipeManager {
             fis.read(data);
             fis.close();
             JSONObject json = new JSONObject(new String(data, "UTF-8"));
-            p.profileName = json.optString("profileName", "RECIPE");
+            p.profileName      = json.optString("profileName", "RECIPE");
+            p.camFile          = json.optString("camFile", null);   // null = normal loose-file mode
+            p.bundledLutName   = json.optString("bundledLutName", null);
+            p.bundledGrainName = json.optString("bundledGrainName", null);
             String loadedLutName = json.optString("lutName", "OFF");
             p.lutIndex = recipeNames.indexOf(loadedLutName);
             if (p.lutIndex == -1) p.lutIndex = 0;
@@ -160,20 +178,8 @@ public class RecipeManager {
             p.halation        = json.optInt("halation", 0);
             p.vignette        = json.optInt("vignette", 0);
             p.grain           = json.optInt("grain", 0);
-            
             String loadedGrainName = json.optString("grainName", "NONE");
-            List<String> grainOptions = java.util.Arrays.asList(MenuController.getGrainEngineOptions());
-
-            if (!loadedGrainName.equals("NONE")) {
-                p.grainSize = grainOptions.indexOf(loadedGrainName.toUpperCase());
-                if (p.grainSize == -1) p.grainSize = 0;
-            } else {
-                // Legacy Recipe Fallback
-                int legacySize = json.optInt("grainSize", 0);
-                String legacyName = (legacySize == 0) ? "SMALL" : (legacySize == 1) ? "MED" : "LARGE";
-                p.grainSize = grainOptions.indexOf(legacyName);
-                if (p.grainSize == -1) p.grainSize = 0; // If not found, use first available
-            }
+            p.grainSize = resolveGrainIndex(loadedGrainName, json.optInt("grainSize", 0));
 
             p.advancedGrainExperimental = json.optInt("advancedGrainExperimental", 0);
             p.bloom           = json.optInt("bloom", 0);
@@ -214,6 +220,15 @@ public class RecipeManager {
             StringBuilder sb = new StringBuilder();
             sb.append("{\n");
             sb.append("  \"profileName\": \"").append(p.profileName.replace("\"", "\\\"")).append("\",\n");
+            if (p.camFile != null) {
+                sb.append("  \"camFile\": \"").append(p.camFile.replace("\"", "\\\"")).append("\",\n");
+            }
+            if (p.bundledLutName != null) {
+                sb.append("  \"bundledLutName\": \"").append(p.bundledLutName.replace("\"", "\\\"")).append("\",\n");
+            }
+            if (p.bundledGrainName != null) {
+                sb.append("  \"bundledGrainName\": \"").append(p.bundledGrainName.replace("\"", "\\\"")).append("\",\n");
+            }
             sb.append("  \"lutName\": \"").append(lutNameToSave.replace("\"", "\\\"")).append("\",\n");
             sb.append("  \"lutOpacity\": ").append(p.opacity).append(",\n");
             sb.append("  \"shadowToe\": ").append(p.shadowToe).append(",\n");
@@ -228,9 +243,14 @@ public class RecipeManager {
 
             String grainNameToSave = "NONE";
             if (p.grain > 0) {
-                List<String> grainOptions = java.util.Arrays.asList(MenuController.getGrainEngineOptions());
-                if (p.grainSize >= 0 && p.grainSize < grainOptions.size()) {
-                    grainNameToSave = grainOptions.get(p.grainSize);
+                File grainFile = MenuController.getGrainTextureFile(p.grainSize);
+                if (grainFile != null) {
+                    grainNameToSave = getFileStem(grainFile.getName());
+                } else {
+                    List<String> grainOptions = java.util.Arrays.asList(MenuController.getGrainEngineOptions());
+                    if (p.grainSize >= 0 && p.grainSize < grainOptions.size()) {
+                        grainNameToSave = grainOptions.get(p.grainSize);
+                    }
                 }
             }
             sb.append("  \"grainName\": \"").append(grainNameToSave.replace("\"", "\\\"")).append("\",\n");
@@ -289,12 +309,64 @@ public class RecipeManager {
         }
     }
 
+    private static String normalizeGrainKey(String value) {
+        if (value == null) return "";
+        String normalized = value.trim().toUpperCase();
+        int dot = normalized.lastIndexOf('.');
+        if (dot > 0) normalized = normalized.substring(0, dot);
+        normalized = normalized.replace('_', ' ');
+        while (normalized.indexOf("  ") != -1) {
+            normalized = normalized.replace("  ", " ");
+        }
+        return normalized;
+    }
+
+    private static String getFileStem(String name) {
+        if (name == null) return "";
+        int dot = name.lastIndexOf('.');
+        return dot > 0 ? name.substring(0, dot) : name;
+    }
+
+    private static int findGrainIndexByName(String grainName) {
+        String target = normalizeGrainKey(grainName);
+        if (target.length() == 0 || "NONE".equals(target)) return -1;
+
+        String[] grainOptions = MenuController.getGrainEngineOptions();
+        for (int i = 0; i < grainOptions.length; i++) {
+            if (target.equals(normalizeGrainKey(grainOptions[i]))) {
+                return i;
+            }
+
+            File grainFile = MenuController.getGrainTextureFile(i);
+            if (grainFile != null && target.equals(normalizeGrainKey(getFileStem(grainFile.getName())))) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static int resolveLegacyGrainIndex(int legacySize) {
+        int safeIndex = legacySize;
+        if (safeIndex < 0) safeIndex = 0;
+        if (safeIndex >= LEGACY_GRAIN_NAMES.length) safeIndex = LEGACY_GRAIN_NAMES.length - 1;
+
+        int resolved = findGrainIndexByName(LEGACY_GRAIN_NAMES[safeIndex]);
+        return resolved >= 0 ? resolved : 0;
+    }
+
+    private static int resolveGrainIndex(String loadedGrainName, int legacySize) {
+        int resolved = findGrainIndexByName(loadedGrainName);
+        if (resolved >= 0) return resolved;
+        return resolveLegacyGrainIndex(legacySize);
+    }
+
     public void savePreferences() {
         try {
             File prefsFile = new File(recipeDir, "PREFS.TXT");
             FileOutputStream fos = new FileOutputStream(prefsFile);
             String prefsData = "quality=" + qualityIndex + "\nslot=" + currentSlot + "\n" +
                                "multicore=" + multiCoreEnabled + "\n" +
+                               "fancyupscale=" + fancyUpscaleEnabled + "\n" +
                                "c1=" + prefC1 + "\nc2=" + prefC2 + "\nc3=" + prefC3 + "\n" +
                                "ael=" + prefAel + "\nfn=" + prefFn + "\n";
             fos.write(prefsData.getBytes());
@@ -322,25 +394,132 @@ public class RecipeManager {
         if (all != null) {
             for (File f : all) {
                 String n = f.getName().toUpperCase();
-                if (!n.endsWith(".TXT") || n.startsWith("R_SLOT") || n.equals("PREFS.TXT")) continue;
 
-                String pName = n.replace(".TXT", "");
-                try {
-                    BufferedReader br = new BufferedReader(new FileReader(f));
-                    String line;
-                    while ((line = br.readLine()) != null) {
-                        if (line.contains("\"profileName\"")) {
-                            String[] parts = line.split("\"");
-                            if (parts.length >= 4) pName = parts[3];
-                            break;
+                // Regular vault recipe (.TXT, not a slot file or prefs)
+                if (n.endsWith(".TXT") && !n.startsWith("R_SLOT") && !n.equals("PREFS.TXT")) {
+                    String pName = n.replace(".TXT", "");
+                    try {
+                        BufferedReader br = new BufferedReader(new FileReader(f));
+                        String line;
+                        while ((line = br.readLine()) != null) {
+                            if (line.contains("\"profileName\"")) {
+                                String[] parts = line.split("\"");
+                                if (parts.length >= 4) pName = parts[3];
+                                break;
+                            }
                         }
+                        br.close();
+                    } catch (Exception e) {}
+                    vaultItems.add(new VaultItem(f.getName(), pName));
+                }
+
+                // .cam bundle — display name comes from recipe.json inside the ZIP
+                if (n.endsWith(".CAM")) {
+                    String bundleName = f.getName().replaceAll("(?i)\\.cam$", "");
+                    try {
+                        java.util.zip.ZipFile zf = new java.util.zip.ZipFile(f);
+                        java.util.zip.ZipEntry je = zf.getEntry("recipe.json");
+                        if (je != null) {
+                            java.io.InputStream is = zf.getInputStream(je);
+                            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+                            byte[] buf = new byte[2048]; int read;
+                            while ((read = is.read(buf)) != -1) baos.write(buf, 0, read);
+                            is.close();
+                            org.json.JSONObject json = new org.json.JSONObject(baos.toString("UTF-8"));
+                            bundleName = json.optString("recipeName", bundleName);
+                        }
+                        zf.close();
+                    } catch (Exception e) {
+                        DebugLog.write("scanVault .cam read error: " + e.getMessage());
                     }
-                    br.close();
-                } catch (Exception e) {}
-                vaultItems.add(new VaultItem(f.getName(), pName));
+                    // VaultItem filename is the original .cam filename; prefix marks it as a bundle.
+                    vaultItems.add(new VaultItem(f.getName(), "[CAM] " + bundleName));
+                }
             }
         }
         if (vaultItems.isEmpty()) vaultItems.add(new VaultItem("NONE", "NO VAULT RECIPES"));
+    }
+
+    /**
+     * Loads a .cam bundle into the current slot.
+     * Reads recipe.json from inside the ZIP, applies all settings to the slot,
+     * and stores the .cam filename so processing knows to load LUT/grain from the bundle.
+     */
+    public void loadCamIntoSlot(String camFilename) {
+        try {
+            File camFile = new File(recipeDir, camFilename);
+            if (!camFile.exists()) {
+                DebugLog.write("loadCamIntoSlot: file not found: " + camFilename);
+                return;
+            }
+
+            java.util.zip.ZipFile zf = new java.util.zip.ZipFile(camFile);
+            java.util.zip.ZipEntry je = zf.getEntry("recipe.json");
+            if (je == null) {
+                zf.close();
+                DebugLog.write("loadCamIntoSlot: no recipe.json in " + camFilename);
+                return;
+            }
+            java.io.InputStream is = zf.getInputStream(je);
+            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+            byte[] buf = new byte[4096]; int read;
+            while ((read = is.read(buf)) != -1) baos.write(buf, 0, read);
+            is.close(); zf.close();
+
+            org.json.JSONObject json = new org.json.JSONObject(baos.toString("UTF-8"));
+
+            // Build a profile from the bundle's recipe.json
+            RTLProfile p = new RTLProfile(currentSlot);
+            p.camFile         = camFilename;
+            p.profileName     = json.optString("recipeName", json.optString("profileName", camFilename));
+            p.opacity         = json.optInt("lutOpacity",  json.optInt("opacity", 100));
+            p.shadowToe       = json.optInt("shadowToe", 0);
+            p.rollOff         = json.optInt("rollOff", 0);
+            p.colorChrome     = json.optInt("colorChrome", 0);
+            p.chromeBlue      = json.optInt("chromeBlue", 0);
+            p.subtractiveSat  = json.optInt("subtractiveSat", 0);
+            p.halation        = json.optInt("halation", 0);
+            p.vignette        = json.optInt("vignette", 0);
+            p.grain           = json.optInt("grain", 0);
+            p.grainSize       = json.optInt("grainSize", 1);
+            p.advancedGrainExperimental = json.optInt("advancedGrainExperimental", 0);
+            p.bloom           = json.optInt("bloom", 0);
+            p.contrast        = json.optInt("contrast", 0);
+            p.saturation      = json.optInt("saturation", 0);
+            p.wbShift         = json.optInt("wbShift", 0);
+            p.wbShiftGM       = json.optInt("wbShiftGM", 0);
+            p.colorMode       = json.optString("colorMode", "Standard");
+            p.whiteBalance    = json.optString("whiteBalance", "Auto");
+            p.shadingRed      = json.optInt("shadingRed", 0);
+            p.shadingBlue     = json.optInt("shadingBlue", 0);
+            p.colorDepthRed   = json.optInt("colorDepthRed", 0);
+            p.colorDepthGreen = json.optInt("colorDepthGreen", 0);
+            p.colorDepthBlue  = json.optInt("colorDepthBlue", 0);
+            p.colorDepthCyan  = json.optInt("colorDepthCyan", 0);
+            p.colorDepthMagenta = json.optInt("colorDepthMagenta", 0);
+            p.colorDepthYellow  = json.optInt("colorDepthYellow", 0);
+            p.dro             = json.optString("dro", "OFF");
+            p.pictureEffect   = json.optString("pictureEffect", "off");
+            p.proColorMode    = json.optString("proColorMode", "off");
+            p.sharpness       = json.optInt("sharpness", 0);
+            p.sharpnessGain   = json.optInt("sharpnessGain", 0);
+            p.vignetteHardware= json.optInt("vignetteHardware", 0);
+            org.json.JSONArray arr = json.optJSONArray("advMatrix");
+            if (arr != null && arr.length() == 9) {
+                for (int i = 0; i < 9; i++) p.advMatrix[i] = arr.getInt(i);
+            }
+            // lutIndex stays 0 (OFF) — LUT comes from the bundle, not loose files.
+            // Read display names so the menu can show something meaningful.
+            p.bundledLutName   = json.optString("lutName", null);
+            p.bundledGrainName = json.optString("grainName", null);
+
+            loadedProfiles[currentSlot] = p;
+            savePreferences();
+            DebugLog.write("loadCamIntoSlot: loaded \"" + p.profileName + "\" into slot " + (currentSlot + 1));
+
+        } catch (Exception e) {
+            DebugLog.write("loadCamIntoSlot error: " + e.getMessage());
+        }
     }
 
     public List<VaultItem> getVaultItems() {
@@ -361,7 +540,11 @@ public class RecipeManager {
 
     public void previewVaultToSlot(String vaultFilename) {
         if (vaultFilename.equals("NONE") || vaultFilename.equals("NO VAULT RECIPES")) return;
-        loadedProfiles[currentSlot] = loadProfileFromFile(vaultFilename, currentSlot);
+        if (vaultFilename.toUpperCase().endsWith(".CAM")) {
+            loadCamIntoSlot(vaultFilename);   // bundle: reads recipe.json + loads LUT/grain in-memory
+        } else {
+            loadedProfiles[currentSlot] = loadProfileFromFile(vaultFilename, currentSlot);
+        }
     }
 
     public void resetCurrentSlot() {

@@ -85,6 +85,13 @@ Never violate these constraints:
    LUTs and matrices belong on the SD card as files, not hardcoded Java arrays.
 5. Keep `MainActivity.java` lightweight.
    New logic belongs in dedicated managers such as `MatrixManager` or `HudManager`, not in `MainActivity`.
+6. **All app-created SD card files must use strict 8.3 filenames. No exceptions.**
+   The Sony camera FAT32 driver can READ long-filename (LFN/VFAT) files created on a PC, but it
+   CANNOT CREATE new files with long filenames from the device. Attempting to do so fails silently
+   with `FileNotFoundException: ENOENT` even though the parent directory exists and is writable.
+   Rules: filename ≤ 8 chars, extension ≤ 3 chars, uppercase, no spaces.
+   Good examples: `DEBUG.TXT`, `R_SLOT01.TXT`, `LUT_TMP.CUB`, `GRN_TMP.PNG`, `SMALL.png`.
+   Bad examples: `cam_lut_tmp.cube` (11-char name, 4-char ext — caused the .cam processing bug).
 
 ## How Codex Should Work In This Repo
 - Inspect the existing code before proposing or making changes.
@@ -114,6 +121,24 @@ To keep `jpegcam` and `camera-recipe-hub` in sync, follow these rules:
    If a recipe lacks a modern key such as `grainName`, keep fallback mapping logic for legacy values.
 4. Path consistency:
    User-facing SD card folder instructions in the web project must match the hardcoded paths used by the Android app.
+
+## Implementation Status
+
+### Completed
+- **XPAN crop EXIF fix** — `patch_exif_height()` patches IFD0 ImageLength + ExifSubIFD PixelYDimension so crops show correct dimensions everywhere.
+- **DebugLog system** — `JPEGCAM/DEBUG.TXT` on SD card, auto-rotates at 60KB. Safe to call from any thread.
+- **CI signing fix** — `DEBUG_KEYSTORE_B64` GitHub secret restores the same keystore on every build runner, eliminating forced reinstalls.
+- **Package rename** — applicationId changed from `com.jpgcookbook.sony` to `com.jpegcam.sony`. Manifest package (`com.github.ma1co.pmcademo.app`) unchanged — Sony OpenMemories requires it.
+- **.cam bundle system** — full end-to-end implementation:
+  - `loadCamIntoSlot()` reads recipe.json from ZIP, populates profile, stores `camFile` / `bundledLutName` / `bundledGrainName`.
+  - `LutEngine.loadFromCam()` two-phase: read all bytes into memory → close ZIP → write 8.3 temp files → native load → delete.
+  - `ProcessingQueueManager.copyProfile()` now copies `camFile`, `bundledLutName`, `bundledGrainName` (were missing, causing every queued .cam shot to process with no LUT).
+  - `RecipeManager` save/load now persists `bundledLutName` and `bundledGrainName` so menu display names survive app restarts.
+- **Version 2.02** — versionCode 50, versionName "2.02".
+
+### Pending / In Progress
+- **.cam processing validation** — 8.3 filename fix (`LUT_TMP.CUB` / `GRN_TMP.PNG`) awaiting camera test. Expected: `CAM: loadLutNative=true` in DEBUG.TXT and graded output in GRADED/.
+- **HttpServer .cam upload endpoint** — not started. Low priority.
 
 ## Response Style
 When answering the user:

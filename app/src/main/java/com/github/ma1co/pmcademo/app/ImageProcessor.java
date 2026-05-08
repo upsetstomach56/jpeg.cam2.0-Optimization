@@ -188,7 +188,13 @@ public class ImageProcessor {
                 }
                 fileReadyMs = System.currentTimeMillis();
 
-                if (lutPath != null || lutName != null) {
+                boolean camGrainLoaded = false;
+                if (p.camFile != null) {
+                    String camPath = new File(Filepaths.getRecipeDir(), p.camFile).getAbsolutePath();
+                    LutEngine.CamLoadResult cam = mEngine.loadFromCam(camPath, Filepaths.getAppDir());
+                    if (!cam.lutLoaded && p.opacity > 0) return "FAILED";
+                    camGrainLoaded = cam.grainLoaded;
+                } else if (lutPath != null || lutName != null) {
                     if (!mEngine.loadLut(lutPath, lutName)) return "FAILED";
                 }
                 lutReadyMs = System.currentTimeMillis();
@@ -223,9 +229,15 @@ public class ImageProcessor {
                 }
 
                 if (p.grain > 0) {
-                    File texFile = MenuController.getGrainTextureFile(finalGrainSize);
-                    if (mEngine.loadGrainTexture(texFile)) {
+                    boolean grainTextureReady = camGrainLoaded;
+                    if (!grainTextureReady) {
+                        File texFile = MenuController.getGrainTextureFile(finalGrainSize);
+                        grainTextureReady = mEngine.loadGrainTexture(texFile);
+                    }
+                    if (grainTextureReady) {
                         cxxGrainEngine = 2;
+                    } else if (cxxGrainEngine == 2) {
+                        cxxGrainEngine = 0;
                     }
                 }
                 textureReadyMs = System.currentTimeMillis();
@@ -233,7 +245,12 @@ public class ImageProcessor {
                 // Use the CPU Engine toggle from Settings (page 6) to decide thread count.
                 RecipeManager rm = ((MainActivity) mContext).getRecipeManager();
                 numCores = rm.isMultiCoreEnabled() ? Runtime.getRuntime().availableProcessors() : 1;
-                Log.d("JPEG.CAM", "Processing with " + numCores + " core(s). MultiCore=" + rm.isMultiCoreEnabled());
+                boolean doFancyUpscale = rm.isFancyUpscaleEnabled();
+                String cm = p.colorMode != null ? p.colorMode.toLowerCase() : "";
+                String pe = p.pictureEffect != null ? p.pictureEffect.toLowerCase() : "";
+                boolean isMono = cm.equals("mono") || cm.equals("sepia") || pe.contains("mono");
+                Log.d("JPEG.CAM", "Processing with " + numCores + " core(s). MultiCore=" + rm.isMultiCoreEnabled()
+                        + " FancyUpscale=" + doFancyUpscale);
 
                 boolean success = mEngine.applyLutToJpeg(
                     original.getAbsolutePath(), outFile.getAbsolutePath(),
@@ -242,7 +259,7 @@ public class ImageProcessor {
                     p.halation, finalBloom, 
                     cxxGrainEngine,
                     finalJpegQuality, 
-                    applyCrop, numCores);  // <--- ADDED numCores HERE
+                    isMono, applyCrop, numCores, doFancyUpscale);
                 nativeDoneMs = System.currentTimeMillis();
                 String timingLine = "TIMING processJpeg file=" + original.getName()
                         + " total=" + (nativeDoneMs - taskStartMs)
