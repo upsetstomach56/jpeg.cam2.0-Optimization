@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>JPEG.CAM Web Dashboard Options</title>
   <style>
-    :root { color-scheme: dark; --bg:#101214; --panel:#181b1e; --line:#2a3034; --text:#e9ecec; --muted:#8b969b; --accent:#d98238; --green:#4ba653; --red:#d64b3a; }
+    :root { color-scheme: dark; --bg:#101214; --panel:#181b1e; --line:#2a3034; --text:#e9ecec; --muted:#8b969b; --accent:#d98238; --red:#d64b3a; }
     * { box-sizing: border-box; }
     body { margin:0; background:var(--bg); color:var(--text); font-family: Arial, sans-serif; }
     header { padding:22px 28px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; }
@@ -19,7 +19,6 @@
     .topbar { justify-content:space-between; align-items:center; margin-bottom:14px; }
     .pill,.tab,.button { border:1px solid var(--line); border-radius:6px; padding:8px 10px; color:var(--muted); font-size:11px; font-weight:700; }
     .tab.active,.button.primary { background:var(--accent); border-color:var(--accent); color:white; }
-    .tab.green { background:var(--green); border-color:var(--green); color:white; }
     .button.danger { background:var(--red); border-color:var(--red); color:white; }
     .actions { justify-content:space-between; margin:12px 0; }
     .grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
@@ -42,7 +41,7 @@
       <div class="label"><strong>OPTION A</strong><span>Compact Gallery</span></div>
       <div class="screen">
         <div class="topbar"><span>JPEG.CAM</span><span class="pill">18.4GB FREE</span></div>
-        <div class="tabs"><span class="tab green">GRADED PHOTOS</span><span class="tab">ORIGINAL PHOTOS</span></div>
+        <div class="tabs"><span class="tab active">GRADED PHOTOS</span><span class="tab">ORIGINAL PHOTOS</span></div>
         <div class="actions"><span class="pill">3 SELECTED</span><span><span class="button danger">DELETE</span> <span class="button primary">DOWNLOAD</span></span></div>
         <div class="grid"><div class="thumb"></div><div class="thumb"></div><div class="thumb"></div><div class="thumb"></div><div class="thumb"></div><div class="thumb"></div></div>
       </div>
@@ -51,7 +50,7 @@
       <div class="label"><strong>OPTION B</strong><span>Sidebar Navigation</span></div>
       <div class="screen two-col">
         <div class="sidebar">
-          <span class="tab green">GRADED</span><span class="tab">ORIGINALS</span><span class="tab">IMPORT</span><span class="tab">STATUS</span>
+          <span class="tab active">GRADED</span><span class="tab">ORIGINALS</span><span class="tab">IMPORT</span><span class="tab">STATUS</span>
         </div>
         <div>
           <div class="topbar"><span>GRADED PHOTOS</span><span class="pill">TODAY</span></div>
