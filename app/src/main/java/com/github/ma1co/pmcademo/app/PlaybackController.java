@@ -17,6 +17,8 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 
 /**
@@ -37,6 +39,7 @@ public class PlaybackController {
     private static final int GRID_PAGE_SIZE = GRID_COLUMNS * GRID_ROWS;
     private static final int THUMB_REQ_WIDTH = 150;
     private static final int THUMB_REQ_HEIGHT = 84;
+    private static final int THUMB_CACHE_LIMIT = 24;
 
     private final Context      context;
     private final HostCallback host;
@@ -61,6 +64,8 @@ public class PlaybackController {
     private final ImageView[]    gridImages = new ImageView[GRID_PAGE_SIZE];
     private final TextView[]     gridLabels = new TextView[GRID_PAGE_SIZE];
     private final Bitmap[]       gridBitmaps = new Bitmap[GRID_PAGE_SIZE];
+    private final LinkedHashMap<String, Bitmap> thumbnailCache =
+            new LinkedHashMap<String, Bitmap>(THUMB_CACHE_LIMIT, 0.75f, true);
 
     public PlaybackController(Context context, FrameLayout rootLayout, HostCallback host) {
         this.context = context;
@@ -81,6 +86,7 @@ public class PlaybackController {
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
         header.setPadding(dp(10), dp(8), dp(10), dp(6));
+        UiTheme.titlePanel(header, UiTheme.ACCENT);
         FrameLayout.LayoutParams headerParams = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 dp(56),
@@ -97,7 +103,7 @@ public class PlaybackController {
         header.addView(backText, new LinearLayout.LayoutParams(dp(92), dp(40)));
 
         titleText = new TextView(context);
-        titleText.setText("PHOTOS");
+        titleText.setText("GRADED PHOTOS");
         titleText.setTextColor(UiTheme.TEXT);
         titleText.setTextSize(17);
         titleText.setTypeface(Typeface.DEFAULT_BOLD);
@@ -226,6 +232,7 @@ public class PlaybackController {
         imageView.setImageBitmap(null);
         recycleCurrentBitmap();
         recycleGridBitmaps();
+        clearThumbnailCache();
     }
 
     public void select() {
@@ -326,9 +333,9 @@ public class PlaybackController {
         imageView.setVisibility(View.GONE);
         infoText.setVisibility(View.GONE);
         gridContainer.setVisibility(View.VISIBLE);
-        titleText.setText(confirmDelete ? "DELETE " + files.get(index).getName() + "?" : "PHOTOS  < PAGE " + (currentPage() + 1) + " / " + pageCount() + " >");
+        titleText.setText(confirmDelete ? "DELETE " + files.get(index).getName() + "?" : "GRADED PHOTOS  < PAGE " + (currentPage() + 1) + " / " + pageCount() + " >");
         UiTheme.pageTabPanel(backText, UiTheme.ACCENT, backSelected, false);
-        backText.setTextColor(backSelected ? UiTheme.TEXT : UiTheme.TEXT_MUTED);
+        backText.setTextColor(backSelected ? UiTheme.TEXT_ON_ACCENT : UiTheme.TEXT_MUTED);
         deleteText.setVisibility(View.GONE);
         deleteText.setText("DELETE");
         UiTheme.pageTabPanel(deleteText, UiTheme.ACCENT, false, false);
@@ -354,9 +361,9 @@ public class PlaybackController {
             tile.setVisibility(View.VISIBLE);
             UiTheme.tilePanel(tile, UiTheme.ACCENT, selected);
             label.setText(file.getName());
-            label.setTextColor(selected ? UiTheme.TEXT : UiTheme.TEXT_MUTED);
+            label.setTextColor(selected ? UiTheme.TEXT_ON_ACCENT : UiTheme.TEXT_MUTED);
 
-            Bitmap thumbBitmap = decodeGridThumbnail(file);
+            Bitmap thumbBitmap = getGridThumbnail(file);
             gridBitmaps[i] = thumbBitmap;
             thumb.setImageBitmap(thumbBitmap);
         }
@@ -568,6 +575,7 @@ public class PlaybackController {
         files.remove(index);
         recycleCurrentBitmap();
         recycleGridBitmaps();
+        clearThumbnailCache();
         if (files.isEmpty()) {
             exit();
             return;
@@ -578,13 +586,50 @@ public class PlaybackController {
 
     private void renderPhotoHeader() {
         if (files.isEmpty() || index < 0 || index >= files.size()) return;
-        titleText.setText(confirmDelete ? "DELETE " + files.get(index).getName() + "?" : "PHOTO  " + (index + 1) + " / " + files.size());
+        titleText.setText(confirmDelete ? "DELETE " + files.get(index).getName() + "?" : "GRADED PHOTO  " + (index + 1) + " / " + files.size());
         UiTheme.pageTabPanel(backText, UiTheme.ACCENT, backSelected, false);
-        backText.setTextColor(backSelected ? UiTheme.TEXT : UiTheme.TEXT_MUTED);
+        backText.setTextColor(backSelected ? UiTheme.TEXT_ON_ACCENT : UiTheme.TEXT_MUTED);
         deleteText.setVisibility(View.VISIBLE);
         deleteText.setText(confirmDelete ? "CONFIRM?" : "DELETE");
         UiTheme.pageTabPanel(deleteText, UiTheme.ACCENT, deleteSelected, false);
-        deleteText.setTextColor(deleteSelected ? UiTheme.TEXT : UiTheme.TEXT_MUTED);
+        deleteText.setTextColor(deleteSelected ? UiTheme.TEXT_ON_ACCENT : UiTheme.TEXT_MUTED);
+    }
+
+    private Bitmap getGridThumbnail(File file) {
+        String key = thumbnailCacheKey(file);
+        Bitmap cached = thumbnailCache.get(key);
+        if (cached != null && !cached.isRecycled()) return cached;
+
+        Bitmap decoded = decodeGridThumbnail(file);
+        if (decoded != null) {
+            thumbnailCache.put(key, decoded);
+            trimThumbnailCache();
+        }
+        return decoded;
+    }
+
+    private String thumbnailCacheKey(File file) {
+        return file.getAbsolutePath() + "|" + file.lastModified() + "|" + file.length();
+    }
+
+    private void trimThumbnailCache() {
+        while (thumbnailCache.size() > THUMB_CACHE_LIMIT) {
+            Iterator<String> iterator = thumbnailCache.keySet().iterator();
+            if (!iterator.hasNext()) return;
+            String key = iterator.next();
+            Bitmap bitmap = thumbnailCache.get(key);
+            iterator.remove();
+            if (bitmap != null && !bitmap.isRecycled()) bitmap.recycle();
+        }
+    }
+
+    private void clearThumbnailCache() {
+        Iterator<Bitmap> iterator = thumbnailCache.values().iterator();
+        while (iterator.hasNext()) {
+            Bitmap bitmap = iterator.next();
+            if (bitmap != null && !bitmap.isRecycled()) bitmap.recycle();
+        }
+        thumbnailCache.clear();
     }
 
     private void recycleCurrentBitmap() {
@@ -594,7 +639,6 @@ public class PlaybackController {
 
     private void recycleGridBitmaps() {
         for (int i = 0; i < gridBitmaps.length; i++) {
-            if (gridBitmaps[i] != null && !gridBitmaps[i].isRecycled()) gridBitmaps[i].recycle();
             gridBitmaps[i] = null;
             if (gridImages[i] != null) gridImages[i].setImageBitmap(null);
         }

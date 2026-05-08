@@ -57,6 +57,7 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
     private static final int SCANNER_ARM_TIMEOUT_MS = 120000;
     private static final long QUEUE_FALLBACK_PROCESS_MS = 14000;
     private static final int PROCESSING_FREQUENCY_MANUAL = -1;
+    private static final String[] MIN_APERTURE_SHUTTER_VALUES = {"off", "1/30", "1/60", "1/125", "1/250", "1/500"};
 
     private SonyCameraManager cameraManager;
     private InputManager inputManager;
@@ -135,6 +136,7 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
     private int prefJpegQuality = 95;
     private int appTheme = UiTheme.THEME_ORANGE;
     private int processingFrequency = 1;
+    private int minApertureShutterIndex = 0;
     private Paint liveViewMonochromePaint;
     private DiptychManager diptychManager;
 
@@ -375,6 +377,7 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
         appTheme = UiTheme.normalizeThemeIndex(prefs.getInt("appTheme", UiTheme.THEME_ORANGE));
         UiTheme.setTheme(appTheme);
         processingFrequency = normalizeProcessingFrequency(prefs.getInt("processingFrequency", 1));
+        minApertureShutterIndex = normalizeMinApertureShutterIndex(prefs.getInt("minApertureShutterIndex", 0));
         boolean prefShowDiptych = prefs.getBoolean("diptychEnabled", false);
         boolean prefShowDoubleExposure = prefs.getBoolean("doubleExposureEnabled", false);
         processingQueueManager = new ProcessingQueueManager();
@@ -472,6 +475,10 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
         if (value == PROCESSING_FREQUENCY_MANUAL) return PROCESSING_FREQUENCY_MANUAL;
         if (value == 3 || value == 5) return value;
         return 1;
+    }
+
+    private int normalizeMinApertureShutterIndex(int value) {
+        return Math.max(0, Math.min(MIN_APERTURE_SHUTTER_VALUES.length - 1, value));
     }
 
     private boolean shouldQueuePhotos() {
@@ -1424,6 +1431,7 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
         ed.putInt("jpegQuality",       prefJpegQuality);
         ed.putInt("appTheme",          appTheme);
         ed.putInt("processingFrequency", processingFrequency);
+        ed.putInt("minApertureShutterIndex", minApertureShutterIndex);
         ed.putBoolean("diptychEnabled", isPrefDiptych());
         ed.putBoolean("doubleExposureEnabled", isPrefDoubleExposure());
         ed.apply();
@@ -1778,7 +1786,73 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
                 android.util.Log.e("JPEG.CAM", "Failed to set focus mode: " + e.getMessage());
             }
         }
+        applyMinimumAperturePriorityShutter();
         updateMainHUD();
+    }
+
+    private String formatSceneMode(String sceneMode) {
+        if (sceneMode == null || sceneMode.length() == 0) return "--";
+        if ("program-auto".equals(sceneMode)) return "P";
+        if ("aperture-priority".equals(sceneMode)) return "A";
+        if ("shutter-priority".equals(sceneMode) || "shutter-speed".equals(sceneMode)) return "S";
+        if ("manual-exposure".equals(sceneMode)) return "M";
+        if ("auto".equals(sceneMode)) return "AUTO";
+        return sceneMode.toUpperCase().replace('-', ' ');
+    }
+
+    private String formatShutterLabel(Pair<Integer, Integer> ss) {
+        if (ss == null || ss.first == null || ss.second == null) return "--";
+        return ss.first == 1 && ss.second != 1 ? ss.first + "/" + ss.second : ss.first + "\"";
+    }
+
+    private String formatFocusLabel(String focusMode) {
+        if (focusMode == null) return "--";
+        if ("auto".equals(focusMode)) return "AF-S";
+        if ("manual".equals(focusMode)) return "MF";
+        if ("continuous-video".equals(focusMode) || "continuous-picture".equals(focusMode)) return "AF-C";
+        return focusMode.toUpperCase().replace('-', ' ');
+    }
+
+    private int cameraControlToDialMode(int control) {
+        if (control == 0) return DIAL_MODE_PASM;
+        if (control == 1) return DIAL_MODE_SHUTTER;
+        if (control == 2) return DIAL_MODE_APERTURE;
+        if (control == 3) return DIAL_MODE_ISO;
+        if (control == 4) return DIAL_MODE_EXPOSURE;
+        if (control == 5) return DIAL_MODE_FOCUS;
+        return -1;
+    }
+
+    private void applyMinimumAperturePriorityShutter() {
+        if (cameraManager == null || cameraManager.getCamera() == null) return;
+
+        try {
+            Camera c = cameraManager.getCamera();
+            Camera.Parameters p = c.getParameters();
+            if (!"aperture-priority".equals(p.getSceneMode())) return;
+
+            String value = MIN_APERTURE_SHUTTER_VALUES[normalizeMinApertureShutterIndex(minApertureShutterIndex)];
+            String flat = p.flatten();
+            String[] keys = {
+                    "sony-auto-iso-min-shutter-speed",
+                    "auto-iso-minimum-shutter-speed",
+                    "iso-auto-min-shutter-speed",
+                    "min-shutter-speed",
+                    "sony-min-shutter-speed",
+                    "auto-shutter-speed-low-limit"
+            };
+            boolean changed = false;
+            for (int i = 0; i < keys.length; i++) {
+                String key = keys[i];
+                if (p.get(key) != null || (flat != null && flat.indexOf(key + "=") >= 0)) {
+                    p.set(key, value);
+                    changed = true;
+                }
+            }
+            if (changed) c.setParameters(p);
+        } catch (Throwable t) {
+            Log.e("JPEG.CAM", "Failed to apply min aperture shutter", t);
+        }
     }
 
     // --- NEW: KELVIN CYCLE HELPER ---
@@ -1786,6 +1860,7 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
     private void applyHardwareRecipe() {
         if (cameraManager == null || cameraManager.getCamera() == null) return;
         HardwareRecipeApplier.apply(cameraManager.getCamera(), recipeManager.getCurrentProfile());
+        applyMinimumAperturePriorityShutter();
         applyLiveViewMonochromeToCamera(prefLiveViewMonochrome);
     }
 
@@ -2637,6 +2712,29 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
     @Override public boolean isPrefDiptych()      { return diptychManager != null && diptychManager.isEnabled() && diptychManager.getMode() == DiptychManager.MODE_DIPTYCH; } // <--- ADDED
     @Override public boolean isPrefDoubleExposure() { return diptychManager != null && diptychManager.isEnabled() && diptychManager.getMode() == DiptychManager.MODE_DOUBLE_EXPOSURE; }
     @Override public int     getProcessingFrequency() { return processingFrequency; }
+    @Override public String  getCameraControlValue(int control) {
+        if (cameraManager == null || cameraManager.getCamera() == null || cameraManager.getCameraEx() == null) return "--";
+        try {
+            Camera c = cameraManager.getCamera();
+            Camera.Parameters p = c.getParameters();
+            CameraEx.ParametersModifier pm = cameraManager.getCameraEx().createParametersModifier(p);
+            if (control == 0) return formatSceneMode(p.getSceneMode());
+            if (control == 1) return formatShutterLabel(pm.getShutterSpeed());
+            if (control == 2) {
+                if (cachedIsManualFocus && lensManager != null && lensManager.isCurrentProfileManual()) {
+                    return String.format("f%.1f", virtualAperture);
+                }
+                return String.format("f%.1f", pm.getAperture() / 100.0f);
+            }
+            if (control == 3) return pm.getISOSensitivity() == 0 ? "AUTO" : String.valueOf(pm.getISOSensitivity());
+            if (control == 4) return String.format("%+.1f EV", p.getExposureCompensation() * p.getExposureCompensationStep());
+            if (control == 5) return formatFocusLabel(p.getFocusMode());
+        } catch (Throwable t) {
+            Log.e("JPEG.CAM", "Camera control label failed", t);
+        }
+        return "--";
+    }
+    @Override public int     getMinApertureShutterIndex() { return minApertureShutterIndex; }
     @Override public int     getQueuedPhotoCount() { return processingQueueManager != null ? processingQueueManager.getCountForMode(currentQueueMode()) : 0; }
     @Override public List<ProcessingQueueManager.Entry> getQueuedPhotoEntries() {
         if (processingQueueManager == null) return new ArrayList<ProcessingQueueManager.Entry>();
@@ -2667,6 +2765,25 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
     @Override public void    setProcessingFrequency(int v)   {
         processingFrequency = normalizeProcessingFrequency(v);
         if (!captureWritePending && !isProcessing) pendingShotSnapshot = null;
+        saveAppPreferences();
+        updateMainHUD();
+    }
+    @Override public void adjustCameraControl(int control, int dir) {
+        int mode = cameraControlToDialMode(control);
+        if (mode < 0) return;
+        int previousMode = mDialMode;
+        boolean previousLock = isDialLocked;
+        mDialMode = mode;
+        isDialLocked = false;
+        handleHardwareInput(dir);
+        mDialMode = previousMode;
+        isDialLocked = previousLock;
+        if (control == 0 || control == 1) applyMinimumAperturePriorityShutter();
+        updateMainHUD();
+    }
+    @Override public void setMinApertureShutterIndex(int index) {
+        minApertureShutterIndex = normalizeMinApertureShutterIndex(index);
+        applyMinimumAperturePriorityShutter();
         saveAppPreferences();
         updateMainHUD();
     }

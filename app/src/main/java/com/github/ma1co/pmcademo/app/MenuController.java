@@ -63,6 +63,9 @@ public class MenuController {
             "RECIPE SELECTION"
     };
     private static final int CUSTOM_BUTTON_ACTION_MAX = CUSTOM_BUTTON_LABELS.length - 1;
+    private static final String[] MIN_APERTURE_SHUTTER_LABELS = {
+            "OFF", "1/30", "1/60", "1/125", "1/250", "1/500"
+    };
 
     // --- NEW: Caches the physical files so their indexes match the menu ---
     public static java.util.List<File> grainTextureFiles = new java.util.ArrayList<File>();
@@ -153,6 +156,8 @@ public class MenuController {
         int     getPrefJpegQuality();
         int     getAppTheme();
         int     getProcessingFrequency();
+        String  getCameraControlValue(int control);
+        int     getMinApertureShutterIndex();
         int     getQueuedPhotoCount();
         List<ProcessingQueueManager.Entry> getQueuedPhotoEntries();
         ProcessingQueueManager.Entry getQueuedPhotoEntry(int index);
@@ -168,6 +173,8 @@ public class MenuController {
         void setPrefJpegQuality(int v);
         void setAppTheme(int v);
         void setProcessingFrequency(int v);
+        void adjustCameraControl(int control, int dir);
+        void setMinApertureShutterIndex(int index);
         void forceProcessQueuedPhotos();
         void processSelectedQueuedPhotos(boolean[] selected);
         void clearSelectedQueuedPhotos(boolean[] selected);
@@ -1053,11 +1060,27 @@ public class MenuController {
             else if (sel == 2) rm.setPrefC3(clampCustomButtonAction(rm.getPrefC3() + dir));
             else if (sel == 3) rm.setPrefAel(clampCustomButtonAction(rm.getPrefAel() + dir));
             else if (sel == 4) rm.setPrefFn(clampCustomButtonAction(rm.getPrefFn() + dir));
+        } else if (currentPage == 10) {
+            if (sel >= 0 && sel <= 5) {
+                host.adjustCameraControl(sel, dir);
+            } else if (sel == 6) {
+                host.setMinApertureShutterIndex(nextMinApertureShutterIndex(host.getMinApertureShutterIndex(), dir));
+            }
         }
 
         render();
         rm.savePreferences();
-        if (currentPage <= 5) host.scheduleHardwareApply();
+        if (currentPage <= 5 || currentPage == 10) host.scheduleHardwareApply();
+    }
+
+    private int nextMinApertureShutterIndex(int current, int dir) {
+        int idx = Math.max(0, Math.min(MIN_APERTURE_SHUTTER_LABELS.length - 1, current));
+        return (idx + (dir >= 0 ? 1 : -1) + MIN_APERTURE_SHUTTER_LABELS.length) % MIN_APERTURE_SHUTTER_LABELS.length;
+    }
+
+    private String minApertureShutterLabel(int index) {
+        int idx = Math.max(0, Math.min(MIN_APERTURE_SHUTTER_LABELS.length - 1, index));
+        return MIN_APERTURE_SHUTTER_LABELS[idx];
     }
 
     private int nextProcessingFrequency(int current, int dir) {
@@ -1142,10 +1165,18 @@ public class MenuController {
         // Subtitle
         if (selection == -1) UiTheme.selected(tvSubtitle, accent);
         else UiTheme.clear(tvSubtitle);
-        String[] subtitles = {"","RECIPES - Identity & Base","RECIPES - Color Engine","RECIPES - Effects & Shading","RECIPES - LUTs & Grain","RECIPES - Analog Physics","SETTINGS - App Preferences","SETTINGS - Custom Buttons","NETWORK - Web Dashboard","SUPPORT - Resources"};
-        if (currentPage >= 1 && currentPage <= 9) {
-            tvSubtitle.setText(subtitles[currentPage]);
-        }
+        String subtitle = "";
+        if (currentPage == 1) subtitle = "RECIPES - Identity & Base";
+        else if (currentPage == 2) subtitle = "RECIPES - Color Engine";
+        else if (currentPage == 3) subtitle = "RECIPES - Effects & Shading";
+        else if (currentPage == 4) subtitle = "RECIPES - LUTs & Grain";
+        else if (currentPage == 5) subtitle = "RECIPES - Analog Physics";
+        else if (currentPage == 6) subtitle = "SETTINGS - App Preferences";
+        else if (currentPage == 7) subtitle = "SETTINGS - Custom Buttons";
+        else if (currentPage == 8) subtitle = "NETWORK - Web Dashboard";
+        else if (currentPage == 9) subtitle = "SUPPORT - Resources";
+        else if (currentPage == 10) subtitle = "SETTINGS - Camera Controls";
+        tvSubtitle.setText(subtitle);
 
         for (int i = 0; i < 8; i++) {
             rows[i].setVisibility(View.GONE);
@@ -1267,6 +1298,15 @@ public class MenuController {
             setRow(2, "Custom 3 (C3)", customButtonLabel(rm.getPrefC3()));
             setRow(3, "AEL Button",    customButtonLabel(rm.getPrefAel()));
             setRow(4, "FN Button",     customButtonLabel(rm.getPrefFn()));
+        } else if (currentPage == 10) {
+            ic = 7;
+            setRow(0, "Shooting Mode",      host.getCameraControlValue(0));
+            setRow(1, "Shutter Speed",      host.getCameraControlValue(1));
+            setRow(2, "Aperture",           host.getCameraControlValue(2));
+            setRow(3, "ISO",                host.getCameraControlValue(3));
+            setRow(4, "Exposure Comp",      host.getCameraControlValue(4));
+            setRow(5, "Focus Mode",         host.getCameraControlValue(5));
+            setRow(6, "Min A-Mode Shutter", minApertureShutterLabel(host.getMinApertureShutterIndex()));
         } else if (currentPage == 8) {
             ic = 3;
             setRow(0, "Camera Hotspot", hotspotStatus);
@@ -1580,7 +1620,7 @@ public class MenuController {
 
     private int pageToTab(int page) {
         if (page <= 5) return 0;
-        if (page <= 7) return 1;
+        if (page == 6 || page == 7 || page == 10) return 1;
         if (page == 8) return 2;
         return 3;
     }
@@ -1660,14 +1700,14 @@ public class MenuController {
 
     private int[] categoryPages(int tab) {
         if (tab == 0) return new int[] {1, 2, 3, 4, 5};
-        if (tab == 1) return new int[] {6, 7};
+        if (tab == 1) return new int[] {6, 10, 7};
         if (tab == 2) return new int[] {8};
         return new int[] {9};
     }
 
     private String[] categoryPageLabels(int tab) {
         if (tab == 0) return new String[] {"BASE", "COLOR", "FX", "GRAIN", "ANALOG"};
-        if (tab == 1) return new String[] {"APP", "BUTTONS"};
+        if (tab == 1) return new String[] {"APP", "CAMERA", "BUTTONS"};
         if (tab == 2) return new String[] {"WEB"};
         return new String[] {"HELP"};
     }
@@ -1755,6 +1795,7 @@ public class MenuController {
     private void renderHome() {
         renderOptionARail(UiTheme.ACCENT);
         updateOptionAHeader();
+        headerBar.setVisibility(View.GONE);
         homeContainer.setVisibility(View.VISIBLE);
         tabRow.setVisibility(View.GONE);
         supportContainer.setVisibility(View.GONE);
@@ -1824,6 +1865,7 @@ public class MenuController {
     }
 
     private void updateOptionAHeader() {
+        headerBar.setVisibility(isHome() ? View.GONE : View.VISIBLE);
         UiTheme.titlePanel(headerBar, UiTheme.ACCENT);
         headerTitle.setTextColor(UiTheme.TEXT);
         headerPath.setTextColor(UiTheme.ACCENT);

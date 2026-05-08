@@ -35,10 +35,22 @@ jobs:
         echo "sdk.dir=$HOME/clean-sdk" > local.properties
         echo "ndk.dir=$HOME/clean-sdk/ndk/16.1.4479499" >> local.properties
 
-    - name: Restore Signing Keystore
+    - name: Prepare Debug Signing Keystore
       run: |
-        mkdir -p $HOME/.android
-        echo "${{ secrets.DEBUG_KEYSTORE_B64 }}" | base64 --decode > $HOME/.android/debug.keystore
+        mkdir -p "$HOME/.android"
+        KEYSTORE="$HOME/.android/debug.keystore"
+        if [ -n "${{ secrets.DEBUG_KEYSTORE_B64 }}" ]; then
+          echo "${{ secrets.DEBUG_KEYSTORE_B64 }}" | base64 --decode > "$KEYSTORE.tmp" || true
+          if [ -s "$KEYSTORE.tmp" ] && keytool -list -keystore "$KEYSTORE.tmp" -storepass android >/dev/null 2>&1; then
+            mv "$KEYSTORE.tmp" "$KEYSTORE"
+          else
+            rm -f "$KEYSTORE.tmp"
+          fi
+        fi
+        if [ ! -s "$KEYSTORE" ] || ! keytool -list -keystore "$KEYSTORE" -storepass android >/dev/null 2>&1; then
+          rm -f "$KEYSTORE"
+          keytool -genkeypair -v -keystore "$KEYSTORE" -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+        fi
 
     - name: Build with Isolated Legacy Gradle
       run: |

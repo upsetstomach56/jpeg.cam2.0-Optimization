@@ -48,6 +48,18 @@ public class ImageProcessor {
                 scannerStartedMs, detectedMs, stableMs, scannerAttempts).execute(originalPath);
     }
 
+    private boolean hasUsableLut(String lutPath, String lutName) {
+        return isUsableLutValue(lutPath) || isUsableLutValue(lutName);
+    }
+
+    private boolean isUsableLutValue(String value) {
+        if (value == null) return false;
+        String normalized = value.trim();
+        if (normalized.length() == 0) return false;
+        String upper = normalized.toUpperCase(Locale.US);
+        return !"NONE".equals(upper) && !"OFF".equals(upper) && !"NULL".equals(upper);
+    }
+
     private class PreloadLutTask extends AsyncTask<Void, Void, Boolean> {
         private String lutPath;
         private String lutName;
@@ -63,8 +75,10 @@ public class ImageProcessor {
 
         @Override protected void onPreExecute() { mCallback.onPreloadStarted(); }
         @Override protected Boolean doInBackground(Void... params) {
-            if (lutPath != null || lutName != null) {
+            if (hasUsableLut(lutPath, lutName)) {
                 if (!mEngine.loadLut(lutPath, lutName)) return false;
+            } else {
+                mEngine.loadLut(null, "OFF");
             }
             if (grain > 0) {
                 File texFile = MenuController.getGrainTextureFile(grainSize);
@@ -194,8 +208,10 @@ public class ImageProcessor {
                     LutEngine.CamLoadResult cam = mEngine.loadFromCam(camPath, Filepaths.getAppDir());
                     if (!cam.lutLoaded && p.opacity > 0) return "FAILED";
                     camGrainLoaded = cam.grainLoaded;
-                } else if (lutPath != null || lutName != null) {
+                } else if (p.opacity > 0 && hasUsableLut(lutPath, lutName)) {
                     if (!mEngine.loadLut(lutPath, lutName)) return "FAILED";
+                } else {
+                    mEngine.loadLut(null, "OFF");
                 }
                 lutReadyMs = System.currentTimeMillis();
 
