@@ -374,10 +374,10 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
             
             int b_alpha = 0;
             // Radius exactly matched to the original sliding-window engine's physical spread!
-            // Local Bloom (Original was 0.11% spread on full image -> matches alpha 107 on downsampled map)
-            if (bloom == 5 || bloom == 1 || bloom == 3) b_alpha = 107; 
-            // Full Bloom (Original was 0.5% spread on full image -> matches alpha 212 on downsampled map)
-            else if (bloom == 6 || bloom == 2 || bloom == 4) b_alpha = 212;
+            // Local Bloom (Original spread ~3.5 pixels -> matches alpha 51 on downsampled map)
+            if (bloom == 5 || bloom == 1 || bloom == 3) b_alpha = 51; 
+            // Full Bloom (Original spread ~15 pixels -> matches alpha 176 on downsampled map)
+            else if (bloom == 6 || bloom == 2 || bloom == 4) b_alpha = 176;
 
             int h_alpha = (halation == 1) ? 150 : 210;
             
