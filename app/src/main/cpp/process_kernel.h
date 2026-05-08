@@ -1243,6 +1243,7 @@ static inline void process_row_rgb(
             int h11 = halation_map[y1 * map_w + x1];
             int h_top = h00 + (((h10 - h00) * fx) >> 8);
             int h_bot = h01 + (((h11 - h01) * fx) >> 8);
+            int halation_y = h_top + (((h_bot - h_top) * fy) >> 8);
             // Restore exact 1.67x inflation of blur energy from old sliding window's division anomaly
             int scaled_blur = (blur_y * 167) / 100;
             int b_bleed = scaled_blur - origY;
@@ -1462,6 +1463,7 @@ static inline void process_row_yuv(
             int h11 = h_row1[x1];
             int h_top = h00 + (((h10 - h00) * fx) >> 8);
             int h_bot = h01 + (((h11 - h01) * fx) >> 8);
+            int halation_y = h_top + (((h_bot - h_top) * map_fy) >> 8);
             // Restore exact 1.67x inflation of blur energy from old sliding window's division anomaly
             int scaled_blur = (blur_y * 167) / 100;
             int b_bleed = scaled_blur - oldY;
