@@ -736,7 +736,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 diptychManager.processSecondShot(diptychManager.getLeftFilename(), path, entry, scannerStartedMs, detectedMs, stableMs, scannerAttempts);
             }
             return;
-        } else if (shouldQueuePhotos()) {
+        } else if (shouldQueueReadyPhoto(entry)) {
             if (processingQueueManager != null) {
                 processingQueueManager.add(entry);
             }
@@ -826,6 +826,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         mProcessor.triggerLutPreload(lutPath, lutName, p.grain, p.grainSize);
     }
 
+    private boolean shouldQueueReadyPhoto(ProcessingQueueManager.Entry entry) {
+        if (diptychManager != null && diptychManager.isEnabled()) return false;
+        if (entry != null && entry.queueMode == ProcessingQueueManager.MODE_MANUAL) return true;
+        return processingFrequency > 1;
+    }
+
     private void refreshRecipes() {
         List<String> oldPaths = new ArrayList<String>(recipeManager.getRecipePaths());
         String[] savedPaths = new String[10];
@@ -901,8 +907,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     }
 
     public void armFileScanner() {
+        armFileScanner(false);
+    }
+
+    private void armFileScanner(boolean refreshSnapshot) {
         if (mScanner != null) {
-            if (pendingShotSnapshot == null) pendingShotSnapshot = createCurrentQueueEntry();
+            if (refreshSnapshot || pendingShotSnapshot == null) pendingShotSnapshot = createCurrentQueueEntry();
             if (mScanner.isPolling) mScanner.checkNow();
             else mScanner.start();
             final int token = ++captureWriteToken;
@@ -1947,7 +1957,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 
         if (shouldBlockShutterInput() && isShutterInput(sc, k)) return true;
         if (isFullShutterInput(sc, k) && (e == null || e.getRepeatCount() == 0)) {
-            armFileScanner();
+            armFileScanner(true);
         }
 
         // --- FIXED: Added standard Android keycode ---
@@ -1975,7 +1985,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         if (isProcessing && isShutterInput(sc, k)) return true;
 
         if (isFullShutterInput(sc, k) && (e == null || e.getRepeatCount() == 0)) {
-            armFileScanner();
+            armFileScanner(false);
         }
 
         // --- CRITICAL: Swallow the release event so the Sony OS does nothing ---

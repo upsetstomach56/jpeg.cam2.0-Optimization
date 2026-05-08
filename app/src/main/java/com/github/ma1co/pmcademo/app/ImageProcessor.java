@@ -5,6 +5,7 @@ import android.os.AsyncTask;
 import android.util.Log;
 import java.io.File;
 import java.io.FileWriter;
+import java.util.Locale;
 
 public class ImageProcessor {
     private LutEngine mEngine;
@@ -117,6 +118,43 @@ public class ImageProcessor {
             }
         }
 
+        private String buildOutputName(File original, RTLProfile profile) {
+            String originalName = original.getName();
+            String recipeName = sanitizeRecipeName(profile != null ? profile.profileName : null);
+            if (recipeName.length() == 0) return originalName;
+
+            int dot = originalName.lastIndexOf('.');
+            String baseName = dot > 0 ? originalName.substring(0, dot) : originalName;
+            String extension = dot > 0 ? originalName.substring(dot) : "";
+            if (baseName.toUpperCase(Locale.US).endsWith("_" + recipeName.toUpperCase(Locale.US))) {
+                return originalName;
+            }
+            return baseName + "_" + recipeName + extension;
+        }
+
+        private String sanitizeRecipeName(String name) {
+            if (name == null) return "";
+            String trimmed = name.trim();
+            if (trimmed.length() == 0) return "";
+
+            StringBuilder builder = new StringBuilder();
+            boolean lastWasSeparator = false;
+            for (int i = 0; i < trimmed.length() && builder.length() < 48; i++) {
+                char c = trimmed.charAt(i);
+                boolean safe = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9');
+                if (safe) {
+                    builder.append(c);
+                    lastWasSeparator = false;
+                } else if (!lastWasSeparator && builder.length() > 0) {
+                    builder.append('_');
+                    lastWasSeparator = true;
+                }
+            }
+            int len = builder.length();
+            if (len > 0 && builder.charAt(len - 1) == '_') builder.deleteCharAt(len - 1);
+            return builder.toString();
+        }
+
         @Override protected String doInBackground(String... params) {
             long taskStartMs = System.currentTimeMillis();
             long fileReadyMs = taskStartMs;
@@ -153,7 +191,7 @@ public class ImageProcessor {
                 File dir = new File(outDir);
                 if (!dir.exists()) dir.mkdirs();
 
-                File outFile = new File(dir, original.getName());
+                File outFile = new File(dir, buildOutputName(original, p));
 
                 // 0=1/4 RES (4), 1=HALF RES (2), 2=FULL RES (1)
                 scale = (qualityIdx == 0) ? 4 : (qualityIdx == 2 ? 1 : 2);
