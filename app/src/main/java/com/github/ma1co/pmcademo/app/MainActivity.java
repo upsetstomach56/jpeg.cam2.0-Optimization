@@ -8,11 +8,7 @@ import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.graphics.ColorMatrix;
-import android.graphics.ColorMatrixColorFilter;
 import android.graphics.Matrix;
-import android.graphics.Paint;
-import android.graphics.SurfaceTexture;
 import android.graphics.Typeface;
 import android.hardware.Camera;
 import android.media.ExifInterface;
@@ -23,7 +19,8 @@ import android.os.Handler;
 import android.util.Pair;
 import android.view.Gravity;
 import android.view.KeyEvent;
-import android.view.TextureView;
+import android.view.SurfaceHolder;
+import android.view.SurfaceView;
 import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
@@ -41,7 +38,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
-public class MainActivity extends Activity implements TextureView.SurfaceTextureListener,
+public class MainActivity extends Activity implements SurfaceHolder.Callback,
     SonyCameraManager.CameraEventListener, InputManager.InputListener,
     ConnectivityManager.StatusUpdateListener, PlaybackController.HostCallback,
     LensCalibrationController.HostCallback, MenuController.HostCallback,
@@ -85,7 +82,7 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
     private int captureWriteToken = 0;
     private int pendingQueueProcessTargetCount = 0;
 
-    private TextureView mSurfaceView;
+    private SurfaceView mSurfaceView;
     private boolean hasSurface = false;
 
     private FrameLayout mainUIContainer;
@@ -137,7 +134,7 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
     private int appTheme = UiTheme.THEME_ORANGE;
     private int processingFrequency = 1;
     private int minApertureShutterIndex = 0;
-    private Paint liveViewMonochromePaint;
+    private boolean liveViewMonochromeSuspended = false;
     private DiptychManager diptychManager;
 
     private LensProfileManager lensManager;
@@ -403,14 +400,14 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
         }
 
         FrameLayout rootLayout = new FrameLayout(this);
-        mSurfaceView = new TextureView(this);
-        mSurfaceView.setSurfaceTextureListener(this);
+        mSurfaceView = new SurfaceView(this);
+        mSurfaceView.getHolder().addCallback(this);
+        mSurfaceView.getHolder().setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
         rootLayout.addView(mSurfaceView, new FrameLayout.LayoutParams(-1, -1));
         mSurfaceView.post(new Runnable() {
             @Override
             public void run() {
                 updateDiptychPreviewWindow();
-                applyLiveViewMonochromeToCamera(prefLiveViewMonochrome);
             }
         });
 
@@ -1872,38 +1869,65 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
     // getWbString() removed — logic consolidated into HardwareRecipeApplier.
 
     private void applyLiveViewMonochromeToCamera(boolean enabled) {
-        if (mSurfaceView == null) return;
-        if (android.os.Build.VERSION.SDK_INT < 11) return;
-
+        if (cameraManager == null || cameraManager.getCamera() == null) return;
         try {
-            if (enabled) {
-                if (liveViewMonochromePaint == null) {
-                    ColorMatrix matrix = new ColorMatrix();
-                    matrix.setSaturation(0.0f);
-                    liveViewMonochromePaint = new Paint();
-                    liveViewMonochromePaint.setColorFilter(new ColorMatrixColorFilter(matrix));
-                }
-                setViewLayerType(mSurfaceView, 2, liveViewMonochromePaint); // View.LAYER_TYPE_HARDWARE
-            } else {
-                setViewLayerType(mSurfaceView, 0, null); // View.LAYER_TYPE_NONE
+            Camera c = cameraManager.getCamera();
+            if (!enabled) {
+                HardwareRecipeApplier.apply(c, recipeManager.getCurrentProfile());
+                return;
             }
-            mSurfaceView.invalidate();
+
+            boolean applied = false;
+            try {
+                Camera.Parameters p = c.getParameters();
+                List<String> effects = p.getSupportedColorEffects();
+                if (effects != null && effects.contains(Camera.Parameters.EFFECT_MONO)) {
+                    String current = p.getColorEffect();
+                    if (!Camera.Parameters.EFFECT_MONO.equals(current)) {
+                        p.setColorEffect(Camera.Parameters.EFFECT_MONO);
+                        c.setParameters(p);
+                    }
+                    applied = true;
+                }
+            } catch (Throwable ignored) {}
+
+            try {
+                Camera.Parameters p = c.getParameters();
+                boolean changed = false;
+                if (cameraParameterExists(p, "creative-style")) {
+                    setCameraParameterString(p, "creative-style", "mono");
+                    changed = true;
+                }
+                if (cameraParameterExists(p, "color-mode")) {
+                    setCameraParameterString(p, "color-mode", "mono");
+                    changed = true;
+                }
+                if (changed) {
+                    c.setParameters(p);
+                    applied = true;
+                }
+            } catch (Throwable ignored) {}
+
+            if (!applied) Log.w("JPEG.CAM", "Live view monochrome is not supported by this camera API");
         } catch (Throwable t) {
-            Log.e("JPEG.CAM", "Failed to update live view monochrome filter", t);
+            Log.e("JPEG.CAM", "Failed to update live view monochrome", t);
         }
     }
 
-    private void setViewLayerType(View view, int layerType, Paint paint) throws Exception {
-        java.lang.reflect.Method setLayerTypeMethod = View.class.getMethod("setLayerType", int.class, Paint.class);
-        setLayerTypeMethod.invoke(view, layerType, paint);
+    private boolean cameraParameterExists(Camera.Parameters params, String key) {
+        String flat = params != null ? params.flatten() : null;
+        return flat != null && flat.indexOf(key + "=") >= 0;
     }
 
     private void prepareLiveViewMonochromeForCapture() {
-        // Monochrome live view is a TextureView display filter, not a camera
-        // parameter. Captures stay color without suspending the visual filter.
+        if (!prefLiveViewMonochrome) return;
+        liveViewMonochromeSuspended = true;
+        applyLiveViewMonochromeToCamera(false);
     }
 
     private void restoreLiveViewMonochromeAfterCapture() {
+        if (!liveViewMonochromeSuspended) return;
+        liveViewMonochromeSuspended = false;
         applyLiveViewMonochromeToCamera(prefLiveViewMonochrome);
     }
 
@@ -2202,12 +2226,6 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
         super.onResume();
         // REMOVED: cameraManager.start() which was causing the build error!
         registerBatteryReceiver();
-        if (mSurfaceView != null && mSurfaceView.isAvailable() && cameraManager != null && cameraManager.getCamera() == null) {
-            hasSurface = true;
-            cameraManager.open(mSurfaceView.getSurfaceTexture());
-            applyLiveViewMonochromeToCamera(prefLiveViewMonochrome);
-            updateDiptychPreviewWindow();
-        }
 
         // --- PREVENT PASM DIAL CRASH ON A7II ---
         // Register a receiver to swallow Sony's internal hardware state broadcasts
@@ -2521,25 +2539,22 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
     }
 
     @Override
-    public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
+    public void surfaceCreated(SurfaceHolder h) {
         hasSurface = true;
-        if (cameraManager != null) cameraManager.open(surface);
+        if (cameraManager != null) cameraManager.open(h);
         applyLiveViewMonochromeToCamera(prefLiveViewMonochrome);
         updateDiptychPreviewWindow();
     }
 
     @Override
-    public boolean onSurfaceTextureDestroyed(SurfaceTexture surface) {
+    public void surfaceDestroyed(SurfaceHolder h) {
         hasSurface = false;
         if (cameraManager != null) cameraManager.close();
-        return true;
     }
 
-    @Override public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) {
+    @Override public void surfaceChanged(SurfaceHolder h, int f, int w, int h1) {
         updateDiptychPreviewWindow();
     }
-
-    @Override public void onSurfaceTextureUpdated(SurfaceTexture surface) {}
 
     @Override
     public void onHardwareStateChanged() {

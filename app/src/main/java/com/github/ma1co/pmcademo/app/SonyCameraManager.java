@@ -1,7 +1,6 @@
 package com.github.ma1co.pmcademo.app;
 
 import android.hardware.Camera;
-import android.graphics.SurfaceTexture;
 import android.util.Pair;
 import android.util.Log;
 import android.view.SurfaceHolder;
@@ -79,14 +78,6 @@ public class SonyCameraManager {
     }
 
     public void open(SurfaceHolder holder) {
-        openInternal(holder, null);
-    }
-
-    public void open(SurfaceTexture texture) {
-        openInternal(null, texture);
-    }
-
-    private void openInternal(SurfaceHolder holder, SurfaceTexture texture) {
         if (cameraEx == null) {
             try {
                 cameraEx = CameraEx.open(0, null);
@@ -123,8 +114,7 @@ public class SonyCameraManager {
 
                 setupNativeListeners();
 
-                if (texture != null) camera.setPreviewTexture(texture);
-                else camera.setPreviewDisplay(holder);
+                camera.setPreviewDisplay(holder);
                 camera.startPreview();
 
                 try {
