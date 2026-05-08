@@ -1076,35 +1076,54 @@ static inline void process_row_rgb(
             int h_top = h00 + (((h10 - h00) * fx) >> 8);
             int h_bot = h01 + (((h11 - h01) * fx) >> 8);
             int halation_y = h_top + (((h_bot - h_top) * fy) >> 8);
-            if (bloom > 0 && blur_y > 0) {
-                int b_mix = 0;
-                // Scaled down to match perceptual intensity of the old sliding-window engine
-                if (bloom == 5 || bloom == 6) b_mix = 30;
-                else if (bloom == 1 || bloom == 2) b_mix = 60;
-                else if (bloom == 3 || bloom == 4) b_mix = 100;
-                
-                int bright_factor = 64 + ((origY * 192) >> 8); // Hardware division removed
-                int add = (blur_y * b_mix * bright_factor) >> 16;
+            // FULL BLOOM (modes 2/4/6) — broad analog softening, takes digital edge off.
+            // Bright_factor mask removed: the threshold in pass 1 already prevents
+            // midtone contamination, and the mask was suppressing the visible halo
+            // around bright objects (the most cinematically valuable part).
+            const bool is_full_bloom = (bloom == 2 || bloom == 4 || bloom == 6);
+            if (is_full_bloom && blur_y > 0) {
+                int b_mix = (bloom == 6) ? 30 : (bloom == 4) ? 60 : 100; // 1/8, 1/4, 1/2
+                int add = (blur_y * b_mix) >> 8;
                 outR = CLAMP(outR + add);
                 outG = CLAMP(outG + add);
                 outB = CLAMP(outB + add);
             }
 
+            // HALATION — warm amber glow against bright highlights.
+            // In mono/sepia mode the amber cast is dropped: halation effectively
+            // becomes a narrow highlight diffusion (neutral add, no color shift).
             int h_mix = (halation == 1) ? 120 : 200;
             int h_eff = (halation_y * h_mix) / 256;
             h_eff = (h_eff * (255 - origY)) / 256;
 
             if (halation > 0 && h_eff > 0) {
                 if (!is_mono) {
+                    // Color path: warm amber — full red, partial green, slight blue.
                     outR = CLAMP(outR + h_eff);
                     outG = CLAMP(outG + ((h_eff * 100) >> 8));
                     outB = CLAMP(outB + ((h_eff * 30) >> 8));
                 } else {
-                    outR = CLAMP(outR + h_eff / 3);
-                    outG = CLAMP(outG + h_eff / 3);
-                    outB = CLAMP(outB + h_eff / 3);
+                    // Mono/sepia path: neutral diffusion — amber cast would clash with
+                    // the desaturated palette, so the same map is applied symmetrically.
+                    int diffuse = h_eff / 3;
+                    outR = CLAMP(outR + diffuse);
+                    outG = CLAMP(outG + diffuse);
+                    outB = CLAMP(outB + diffuse);
                 }
             }
+        }
+
+        // LOCAL BLOOM (modes 1/3/5) — sparkles & specular highlights only.
+        // Operates inline on full-res luma because an 8x8 average map cannot see
+        // single-pixel highlights. Pure highlight enhancement, no spread.
+        const bool is_local_bloom = (bloom == 1 || bloom == 3 || bloom == 5);
+        if (is_local_bloom && origY > 200) {
+            int over = origY - 200;
+            int b_mix_local = (bloom == 5) ? 30 : (bloom == 3) ? 60 : 100; // 1/8, 1/4, 1/2
+            int boost = (over * over * b_mix_local) >> 8;
+            outR = CLAMP(outR + boost);
+            outG = CLAMP(outG + boost);
+            outB = CLAMP(outB + boost);
         }
 
         // NEW: Engine 2 (Texture Overlay)
@@ -1300,20 +1319,21 @@ static inline void process_row_yuv(
             int h_top = h00 + (((h10 - h00) * fx) >> 8);
             int h_bot = h01 + (((h11 - h01) * fx) >> 8);
             int halation_y = h_top + (((h_bot - h_top) * map_fy) >> 8);
-            if (bloom > 0 && blur_y > 0) {
-                int b_mix = 0;
-                // Scaled down to match perceptual intensity of the old sliding-window engine
-                if (bloom == 5 || bloom == 6) b_mix = 30;
-                else if (bloom == 1 || bloom == 2) b_mix = 60;
-                else if (bloom == 3 || bloom == 4) b_mix = 100;
-                
-                int bright_factor = 64 + ((oldY * 192) >> 8); // Hardware division removed
-                int add_y = (blur_y * b_mix * bright_factor) >> 16;
+            // FULL BLOOM (modes 2/4/6) — broad analog softening, takes digital edge off.
+            // Bright_factor mask removed: the threshold in pass 1 already prevents
+            // midtone contamination.
+            const bool is_full_bloom = (bloom == 2 || bloom == 4 || bloom == 6);
+            if (is_full_bloom && blur_y > 0) {
+                int b_mix = (bloom == 6) ? 30 : (bloom == 4) ? 60 : 100; // 1/8, 1/4, 1/2
+                int add_y = (blur_y * b_mix) >> 8;
                 outY = CLAMP(outY + add_y);
-                cb = cb + ((-cb) * add_y) / 256; // Pulls saturation towards white (0 chroma)
+                cb = cb + ((-cb) * add_y) / 256; // Pull saturation toward neutral (bloom desaturates)
                 cr = cr + ((-cr) * add_y) / 256;
             }
 
+            // HALATION — warm amber glow against highlights.
+            // In mono/sepia, amber would clash with the desaturated palette,
+            // so the chroma push is dropped: halation becomes pure highlight diffusion (luma-only).
             int h_mix = (halation == 1) ? 120 : 200;
             int h_eff = (halation_y * h_mix) / 256;
             h_eff = (h_eff * (255 - oldY)) / 256;
@@ -1321,12 +1341,28 @@ static inline void process_row_yuv(
             if (halation > 0 && h_eff > 0) {
                 outY = CLAMP(outY + h_eff / 3);
                 if (!is_mono) {
+                    // Color path: warm amber via cr+ / cb-, signed-clamped to chroma range.
                     cr = cr + ((h_eff * 128) >> 8);
-                    cb = cb - ((h_eff * 30) >> 8); // Tuned to match RGB path's color shift
+                    cb = cb - ((h_eff * 30) >> 8);
                     if (cr >  127) cr =  127; else if (cr < -128) cr = -128;
                     if (cb >  127) cb =  127; else if (cb < -128) cb = -128;
                 }
+                // Mono/sepia: chroma left untouched — luma bump alone is the diffusion.
             }
+        }
+
+        // LOCAL BLOOM (modes 1/3/5) — sparkles & specular highlights only.
+        // Inline on full-res luma so single-pixel speculars survive (the 8x8 map
+        // averages them away). Pure highlight enhancement, no spread.
+        const bool is_local_bloom = (bloom == 1 || bloom == 3 || bloom == 5);
+        if (is_local_bloom && oldY > 200) {
+            int over = oldY - 200;
+            int b_mix_local = (bloom == 5) ? 30 : (bloom == 3) ? 60 : 100; // 1/8, 1/4, 1/2
+            int boost = (over * over * b_mix_local) >> 8;
+            outY = CLAMP(outY + boost);
+            // Desaturate slightly toward white as the highlight blooms.
+            cb = cb + ((-cb) * boost) / 256;
+            cr = cr + ((-cr) * boost) / 256;
         }
 
         // NEW: Engine 2 (Texture Overlay)

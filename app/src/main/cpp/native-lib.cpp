@@ -322,12 +322,17 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
 
     bool use_rgb = (localLutSize > 0 && opacity > 0);
 
-    // --- PASS 1: DOWNSAMPLED BLOOM & HALATION MAPS ---
+    // --- PASS 1: DOWNSAMPLED MAPS for FULL BLOOM (diffusion) + HALATION ---
+    // Local bloom (modes 1, 3, 5) is computed inline in the row kernel directly
+    // from full-res luma — sparkles/specular highlights cannot survive an 8x8 average,
+    // so Local needs a different mechanism. Pass 1 only runs when something
+    // actually consumes the map.
+    const bool full_bloom_active = (bloom == 2 || bloom == 4 || bloom == 6);
     uint8_t* bloom_map = NULL;
     uint8_t* halation_map = NULL;
     int map_w = 0, map_h = 0;
 
-    if (bloom > 0 || halation > 0) {
+    if (full_bloom_active || halation > 0) {
         jpeg_read_header(&cd, TRUE);
         cd.scale_num = 1;
         cd.scale_denom = 8;
@@ -356,14 +361,14 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
                     int i = x * 3;
                     int lum = (row[i] * 77 + row[i+1] * 150 + row[i+2] * 29) >> 8;
                     
-                    if (bloom > 0) {
-                        const int THRESH = 180;
-                        int over = lum > THRESH ? lum - THRESH : 0;
-                        // Full = wider knee (9), Local = tighter knee (5)
-                        int e = (bloom % 2 == 0) ? ((over * over * 9) >> 6)
-                                                 : ((over * over * 5) >> 6);
-                        if (e > 255) e = 255;
-                        bloom_map[y * map_w + x] = (uint8_t)e;
+                    if (full_bloom_active) {
+                        // Store raw luma — Full bloom is a global edge-softener,
+                        // not a highlight-source spread. The differential math in
+                        // the row kernel (b_bleed = blur_y - origY, clamped >=0)
+                        // produces lift only on pixels that are darker than their
+                        // local neighborhood, which is what knocks the digital
+                        // crispness off without veiling uniform fields.
+                        bloom_map[y * map_w + x] = (uint8_t)lum;
                     }
                     if (halation > 0 && lum > 210) {
                         int over = lum - 210;
@@ -373,20 +378,18 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
                 y++;
             }
             
-            int b_alpha = 0;
-            // Radius tuned for TWO passes (Gaussian falloff)
-            if (bloom == 5 || bloom == 1 || bloom == 3) b_alpha = 40;  // Local
-            else if (bloom == 6 || bloom == 2 || bloom == 4) b_alpha = 140; // Full
+            // Single radius for Full bloom (Local no longer uses this map).
+            // Tuned for TWO passes — gives Gaussian falloff.
+            int b_alpha = 140;
+            int h_alpha = (halation == 1) ? 120 : 180;
 
-            int h_alpha = (halation == 1) ? 120 : 180; // slightly reduced for 2 passes
-            
-            if (bloom > 0) {
+            if (full_bloom_active) {
                 fast_blur_2d_iir(bloom_map, map_w, map_h, b_alpha);
-                fast_blur_2d_iir(bloom_map, map_w, map_h, b_alpha); // 2nd pass for Gaussian
+                fast_blur_2d_iir(bloom_map, map_w, map_h, b_alpha); // 2nd pass → Gaussian
             }
             if (halation > 0) {
                 fast_blur_2d_iir(halation_map, map_w, map_h, h_alpha);
-                fast_blur_2d_iir(halation_map, map_w, map_h, h_alpha); // 2nd pass for Gaussian
+                fast_blur_2d_iir(halation_map, map_w, map_h, h_alpha); // 2nd pass → Gaussian
             }
         } else {
             if (bloom_map) free(bloom_map);
