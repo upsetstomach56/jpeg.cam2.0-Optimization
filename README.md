@@ -1,3 +1,7 @@
+![License: MIT + Commons Clause](https://img.shields.io/badge/License-Commons%20Clause-red.svg)
+![Platform](https://img.shields.io/badge/platform-Sony%20Alpha%20PMCA-blue)
+![Built for Sony](https://img.shields.io/badge/Built%20for-Sony%20Alpha-black)
+
 # JPEG.CAM - In-Camera Custom Color Science System
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/jbuchanan)
 
