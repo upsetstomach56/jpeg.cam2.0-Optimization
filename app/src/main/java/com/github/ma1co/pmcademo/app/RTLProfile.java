@@ -18,6 +18,7 @@ public class RTLProfile {
     public int wbShift = 0;
     public int wbShiftGM = 0;
     public String dro = "OFF";
+    public int exposureCompensation = 0;
     public int contrast = 0;
     public int saturation = 0;
     public int sharpness = 0;

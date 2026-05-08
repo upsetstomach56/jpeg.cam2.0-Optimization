@@ -45,7 +45,7 @@ public class HttpServer extends NanoHTTPD {
         if (Method.OPTIONS.equals(method)) {
             Response res = newFixedLengthResponse(Response.Status.OK, NanoHTTPD.MIME_PLAINTEXT, "");
             res.addHeader("Access-Control-Allow-Origin", "*");
-            res.addHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
+            res.addHeader("Access-Control-Allow-Methods", "POST, GET, DELETE, OPTIONS");
             res.addHeader("Access-Control-Allow-Headers", "x-file-name, content-length, content-type");
             return res;
         }
@@ -160,11 +160,32 @@ public class HttpServer extends NanoHTTPD {
                 return newFixedLengthResponse(Response.Status.OK, "application/json", json.toString());
             }
 
+            if ((Method.POST.equals(method) || Method.DELETE.equals(method)) && uri.equals("/api/delete")) {
+                Map<String, String> params = session.getParms();
+                String folder = params.get("folder");
+                String name = params.get("name");
+                if (!isSafeFileName(name)) {
+                    return newFixedLengthResponse(Response.Status.BAD_REQUEST, "application/json", "{\"error\":\"Invalid filename\"}");
+                }
+                File file = findRequestedFile(folder, name);
+                if (file == null || !file.exists()) {
+                    return newFixedLengthResponse(Response.Status.NOT_FOUND, "application/json", "{\"error\":\"File not found\"}");
+                }
+                boolean deleted = file.delete();
+                if (!deleted) {
+                    return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json", "{\"error\":\"Delete failed\"}");
+                }
+                Response res = newFixedLengthResponse(Response.Status.OK, "application/json", "{\"status\":\"deleted\"}");
+                res.addHeader("Access-Control-Allow-Origin", "*");
+                return res;
+            }
+
             // Image Delivery (Thumbs and Full Size)
             if (uri.startsWith("/thumb/") || uri.startsWith("/full/")) {
                 Map<String, String> params = session.getParms();
                 String folder = params.get("folder");
                 String name = params.get("name");
+                if (!isSafeFileName(name)) return newFixedLengthResponse(Response.Status.BAD_REQUEST, "text/plain", "Invalid filename");
                 
                 File file = findRequestedFile(folder, name);
 
@@ -240,6 +261,7 @@ public class HttpServer extends NanoHTTPD {
     }
 
     private File findRequestedFile(String folder, String name) {
+        if (!isSafeFileName(name)) return null;
         if (folder != null && folder.equals("GRADED")) {
             return new File(Filepaths.getGradedDir(), name);
         } else {
@@ -257,5 +279,10 @@ public class HttpServer extends NanoHTTPD {
             }
         }
         return null;
+    }
+
+    private boolean isSafeFileName(String name) {
+        if (name == null || name.length() == 0) return false;
+        return name.indexOf('/') < 0 && name.indexOf('\\') < 0 && name.indexOf("..") < 0;
     }
 }

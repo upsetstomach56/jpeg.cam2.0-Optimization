@@ -323,6 +323,7 @@ public class ProcessingQueueManager {
         obj.put("wbShift", profile.wbShift);
         obj.put("wbShiftGM", profile.wbShiftGM);
         obj.put("dro", safe(profile.dro));
+        obj.put("exposureCompensation", profile.exposureCompensation);
         obj.put("contrast", profile.contrast);
         obj.put("saturation", profile.saturation);
         obj.put("sharpness", profile.sharpness);
@@ -369,6 +370,7 @@ public class ProcessingQueueManager {
         p.wbShift = obj.optInt("wbShift", 0);
         p.wbShiftGM = obj.optInt("wbShiftGM", 0);
         p.dro = obj.optString("dro", "OFF");
+        p.exposureCompensation = obj.optInt("exposureCompensation", 0);
         p.contrast = obj.optInt("contrast", 0);
         p.saturation = obj.optInt("saturation", 0);
         p.sharpness = obj.optInt("sharpness", 0);
@@ -436,6 +438,7 @@ public class ProcessingQueueManager {
         copy.wbShift = source.wbShift;
         copy.wbShiftGM = source.wbShiftGM;
         copy.dro = source.dro;
+        copy.exposureCompensation = source.exposureCompensation;
         copy.contrast = source.contrast;
         copy.saturation = source.saturation;
         copy.sharpness = source.sharpness;

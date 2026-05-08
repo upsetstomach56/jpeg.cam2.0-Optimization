@@ -192,6 +192,7 @@ public class RecipeManager {
             p.colorDepthMagenta = json.optInt("colorDepthMagenta", 0);
             p.colorDepthYellow  = json.optInt("colorDepthYellow", 0);
             p.dro             = json.optString("dro", "OFF");
+            p.exposureCompensation = json.optInt("exposureCompensation", 0);
             p.pictureEffect   = json.optString("pictureEffect", "off");
             p.proColorMode    = json.optString("proColorMode", "off");
             p.sharpness       = json.optInt("sharpness", 0);
@@ -254,6 +255,7 @@ public class RecipeManager {
             for (int i = 0; i < 9; i++) sb.append(p.advMatrix[i]).append(i < 8 ? "," : "");
             sb.append("],\n");
             sb.append("  \"dro\": \"").append(p.dro).append("\",\n");
+            sb.append("  \"exposureCompensation\": ").append(p.exposureCompensation).append(",\n");
             sb.append("  \"pictureEffect\": \"").append(p.pictureEffect).append("\",\n");
             sb.append("  \"proColorMode\": \"").append(p.proColorMode).append("\",\n");
             sb.append("  \"sharpness\": ").append(p.sharpness).append(",\n");

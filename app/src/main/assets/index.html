@@ -137,6 +137,8 @@
             background: rgba(255,255,255,0.05);
             box-shadow: 0 4px 8px rgba(0,0,0,0.2);
         }
+        .danger-btn { background: #E54D3A; color: white; }
+        .danger-btn:hover { box-shadow: 0 0 15px rgba(229,77,58,0.32), 0 4px 8px rgba(0,0,0,0.3); }
 
         /* --- PHOTO GALLERY & CARDS --- */
         .gallery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; padding: 25px; padding-bottom: 60px; }
@@ -206,8 +208,8 @@
     <div class="toolbar">
         <div class="row">
             <div class="btn-group" id="mode-toggle">
-                <button class="btn active" id="btn-DCIM" onclick="setMode('DCIM')">ORIGINALS</button>
-                <button class="btn" id="btn-GRADED" onclick="setMode('GRADED')" style="display:none">RECIPES</button>
+                <button class="btn active" id="btn-GRADED" onclick="setMode('GRADED')">GRADED PHOTOS</button>
+                <button class="btn" id="btn-DCIM" onclick="setMode('DCIM')">ORIGINAL PHOTOS</button>
             </div>
             <div class="btn-group">
                 <button class="btn active" id="f-all" onclick="setFilter('all')">ALL TIME</button>
@@ -218,6 +220,7 @@
             <span id="sel-count" style="font-size:12px; color:var(--text-muted); font-weight: 700; letter-spacing: 0.5px;">0 ITEMS SELECTED</span>
             <div>
                 <button class="action-btn secondary-btn" id="unsel-btn" style="display:none" onclick="unselectAll()">UNSELECT ALL</button>
+                <button class="action-btn danger-btn" id="del-btn" disabled onclick="deleteSelected()">DELETE SELECTED</button>
                 <button class="action-btn" id="dl-btn" disabled onclick="downloadSelected()">DOWNLOAD SELECTED</button>
             </div>
         </div>
@@ -231,6 +234,7 @@
         <div class="lb-meta" id="lb-meta"></div>
         <div class="lb-tools" onclick="event.stopPropagation()">
             <button class="action-btn secondary-btn" onclick="rotatePreview()">ROTATE 90°</button>
+            <button class="action-btn danger-btn" onclick="deleteCurrent()">DELETE FROM SD</button>
             <button class="action-btn" id="save-btn" onclick="downloadCurrent()">SAVE TO DEVICE</button>
         </div>
     </div>
@@ -253,7 +257,7 @@
     <script>
         let currentFiles = [];
         let selected = new Set();
-        let mode = 'DCIM';
+        let mode = 'GRADED';
         let filter = 'all';
         let rotation = 0;
         let viewName = "";
@@ -265,7 +269,6 @@
             const res = await fetch('/api/system');
             const sys = await res.json();
             document.getElementById('sys-info').innerText = `${sys.storage_gb}GB FREE`;
-            if(sys.has_graded) document.getElementById('btn-GRADED').style.display = 'block';
             loadFiles();
         }
 
@@ -274,7 +277,7 @@
             abortController = new AbortController();
             document.getElementById('gallery').innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:100px; color:var(--border-color); font-weight:bold; letter-spacing:1px;">INITIALIZING SD INTERFACE...</div>';
             try {
-                const res = await fetch(`/api/files?folder=${mode}`, { signal: abortController.signal });
+                const res = await fetch(`/api/files?folder=${encodeURIComponent(mode)}`, { signal: abortController.signal });
                 const data = await res.json();
                 currentFiles = data.files;
                 selected.clear();
@@ -315,12 +318,14 @@
 
             paginated.forEach(f => {
                 const card = document.createElement('div');
+                const encodedName = encodeURIComponent(f.name);
+                const encodedMode = encodeURIComponent(mode);
                 card.className = `card ${selected.has(f.name) ? 'selected' : ''}`;
                 card.onclick = () => toggleSel(f.name);
                 card.innerHTML = `
                     <div class="checkbox-hitbox" onclick="event.stopPropagation(); toggleSel('${f.name}')"></div>
                     <div class="sel-indicator"></div>
-                    <img src="/thumb/?folder=${mode}&name=${f.name}" onclick="event.stopPropagation(); openLightbox('${f.name}')">
+                    <img src="/thumb/?folder=${encodedMode}&name=${encodedName}" onclick="event.stopPropagation(); openLightbox('${f.name}')">
                     <div class="card-info"><span>${f.name}</span><span>${(f.size/1024/1024).toFixed(1)}MB</span></div>
                 `;
                 container.appendChild(card);
@@ -366,6 +371,7 @@
         function updateUI() {
             document.getElementById('sel-count').innerText = `${selected.size} ITEMS SELECTED`;
             document.getElementById('dl-btn').disabled = selected.size === 0;
+            document.getElementById('del-btn').disabled = selected.size === 0;
             document.getElementById('unsel-btn').style.display = selected.size > 0 ? 'inline-flex' : 'none';
         }
 
@@ -376,11 +382,12 @@
             const img = document.getElementById('lb-img');
             const meta = document.getElementById('lb-meta');
 
-            img.src = `/full/?folder=${mode}&name=${name}`;
+            const fullUrl = `/full/?folder=${encodeURIComponent(mode)}&name=${encodeURIComponent(name)}`;
+            img.src = fullUrl;
             img.style.transform = `rotate(0deg) scale(1)`;
             meta.innerHTML = `<span class="exif-tag" style="color:var(--text-muted); border-color:var(--border-color);">READING EXIF...</span>`;
 
-            parseMetadata(`/full/?folder=${mode}&name=${name}`);
+            parseMetadata(fullUrl);
             lb.style.display = 'flex';
         }
 
@@ -488,7 +495,7 @@
                 await new Promise((resolve, reject) => {
                     img.onload = resolve;
                     img.onerror = reject;
-                    img.src = `/full/?folder=${mode}&name=${viewName}`;
+                    img.src = `/full/?folder=${encodeURIComponent(mode)}&name=${encodeURIComponent(viewName)}`;
                 });
 
                 // 2. Create an invisible Canvas
@@ -539,9 +546,48 @@
             }
         }
 
+        async function deletePhoto(name) {
+            const url = `/api/delete?folder=${encodeURIComponent(mode)}&name=${encodeURIComponent(name)}`;
+            const res = await fetch(url, { method: 'POST' });
+            if (!res.ok) throw new Error(`Delete failed: ${name}`);
+        }
+
+        async function deleteSelected() {
+            const list = Array.from(selected);
+            if (list.length === 0) return;
+            if (!confirm(`Delete ${list.length} photo${list.length === 1 ? '' : 's'} from the SD card?`)) return;
+            const btn = document.getElementById('del-btn');
+            const originalText = btn.innerText;
+            btn.innerText = 'DELETING...';
+            btn.disabled = true;
+            try {
+                for (let name of list) {
+                    await deletePhoto(name);
+                }
+                await loadFiles();
+            } catch (err) {
+                alert('Could not delete one or more photos.');
+            } finally {
+                btn.innerText = originalText;
+                updateUI();
+            }
+        }
+
+        async function deleteCurrent() {
+            if (!viewName) return;
+            if (!confirm(`Delete ${viewName} from the SD card?`)) return;
+            try {
+                await deletePhoto(viewName);
+                closeLightbox();
+                await loadFiles();
+            } catch (err) {
+                alert('Could not delete this photo.');
+            }
+        }
+
         function triggerDownload(name) {
             const link = document.createElement('a');
-            link.href = `/full/?folder=${mode}&name=${name}`;
+            link.href = `/full/?folder=${encodeURIComponent(mode)}&name=${encodeURIComponent(name)}`;
             link.download = name;
             link.click();
         }

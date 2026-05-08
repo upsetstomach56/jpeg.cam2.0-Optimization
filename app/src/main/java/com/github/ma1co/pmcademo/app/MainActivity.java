@@ -933,6 +933,17 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 
         // 1. Contextual Back: If a HUD (like Recipe Vault) is open, close it and reveal the Menu
         if (hudController.isActive()) {
+            if (menuController.isNamingMode()) {
+                menuController.setNamingMode(false);
+                hudController.update();
+                return;
+            }
+            if (menuController.isConfirmingDelete()) {
+                menuController.setConfirmingDelete(false);
+                if (hudController.getMode() == 0) hudController.closeMatrixDeleteConfirm();
+                else hudController.update();
+                return;
+            }
             menuController.setNamingMode(false);
             menuController.setConfirmingDelete(false);
             hudController.close();
@@ -966,7 +977,38 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     if (isProcessing) return;
 
     if (hudController.isActive()) {
+        if ((hudController.getMode() == 0 || hudController.getMode() == 10) && menuController.isNamingMode()) {
+            int action = menuController.activateNameKeyboardKey();
+            if (action == MenuController.NAME_KEY_CANCEL) {
+                menuController.setNamingMode(false);
+                hudController.update();
+                return;
+            }
+            if (action == MenuController.NAME_KEY_CONFIRM) {
+                menuController.setNamingMode(false);
+                String finalName = new String(menuController.getNameBuffer()).trim();
+                if (finalName.isEmpty()) finalName = "CUSTOM";
+                if (hudController.getMode() == 10) {
+                    recipeManager.saveSlotToVault(finalName);
+                    hudController.refreshVaultItems();
+                    for (int i = 0; i < hudController.getVaultItems().size(); i++) {
+                        if (hudController.getVaultItems().get(i).profileName.equalsIgnoreCase(finalName)) { hudController.setVaultIndex(i); break; }
+                    }
+                } else {
+                    hudController.saveCustomMatrix(finalName);
+                }
+                hudController.update();
+                return;
+            }
+            hudController.update();
+            return;
+        }
         if (hudController.getSelection() == -2) {
+            if (hudController.getMode() == 0 && menuController.isConfirmingDelete()) {
+                menuController.setConfirmingDelete(false);
+                hudController.closeMatrixDeleteConfirm();
+                return;
+            }
             if (hudController.getMode() == 10 && menuController.isConfirmingDelete()) {
                 menuController.setConfirmingDelete(false);
                 hudController.setSelection(hudController.getRecipeBrowserSelectedVaultIndex());
@@ -984,6 +1026,30 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             menuController.setNamingMode(false);
             menuController.setConfirmingDelete(false);
             hudController.close();
+            return;
+        }
+
+        if (hudController.getMode() == 0 && menuController.isConfirmingDelete()) {
+            if (hudController.getSelection() == 0) {
+                matrixManager.deleteMatrix(hudController.getActiveMatrixIndex());
+                menuController.setConfirmingDelete(false);
+                hudController.refreshAfterMatrixDelete();
+            } else {
+                menuController.setConfirmingDelete(false);
+                hudController.closeMatrixDeleteConfirm();
+            }
+            return;
+        }
+
+        if (hudController.isMatrixDeleteAction()) {
+            if (matrixManager.getCount() > 0) {
+                menuController.setConfirmingDelete(true);
+                hudController.beginMatrixDeleteConfirm();
+            } else {
+                tvTopStatus.setText("NO SAVED MATRICES");
+                tvTopStatus.setTextColor(UiTheme.WARN);
+                tvTopStatus.setVisibility(View.VISIBLE);
+            }
             return;
         }
 
@@ -1125,13 +1191,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         if (playbackController.isActive()) { playbackController.navigate(-2); return true; }
 
         if (hudController.isActive() && (hudController.getMode() == 0 || hudController.getMode() == 10) && menuController.isNamingMode()) {
-            char[] buf = menuController.getNameBuffer();
-            int pos = menuController.getNameCursorPos();
-            int idx = MenuController.CHARSET.indexOf(buf[pos]);
-            if (idx == -1) idx = 0;
-            idx += 1;
-            if (idx >= MenuController.CHARSET.length()) idx = 0;
-            buf[pos] = MenuController.CHARSET.charAt(idx);
+            menuController.moveNameKeyboard(0, -1);
             hudController.update();
             return true;
         }
@@ -1158,13 +1218,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         if (playbackController.isActive()) { playbackController.navigate(2); return true; }
 
         if (hudController.isActive() && (hudController.getMode() == 0 || hudController.getMode() == 10) && menuController.isNamingMode()) {
-            char[] buf = menuController.getNameBuffer();
-            int pos = menuController.getNameCursorPos();
-            int idx = MenuController.CHARSET.indexOf(buf[pos]);
-            if (idx == -1) idx = 0;
-            idx -= 1;
-            if (idx < 0) idx = MenuController.CHARSET.length() - 1;
-            buf[pos] = MenuController.CHARSET.charAt(idx);
+            menuController.moveNameKeyboard(0, 1);
             hudController.update();
             return true;
         }
@@ -1196,7 +1250,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         }
 
         if (hudController.isActive() && (hudController.getMode() == 0 || hudController.getMode() == 10) && menuController.isNamingMode()) {
-            menuController.advanceNameCursor(-1);
+            menuController.moveNameKeyboard(-1, 0);
             hudController.update();
             return true;
         }
@@ -1233,7 +1287,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         }
 
         if (hudController.isActive() && (hudController.getMode() == 0 || hudController.getMode() == 10) && menuController.isNamingMode()) {
-            menuController.advanceNameCursor(1);
+            menuController.moveNameKeyboard(1, 0);
             hudController.update();
             return true;
         }
@@ -1394,12 +1448,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 
         // --- NEW: INTERCEPT WHEEL TURNS FOR MATRIX NAMING ---
         if (hudController.isActive() && (hudController.getMode() == 0 || hudController.getMode() == 10) && menuController.isNamingMode()) {
-            char[] buf = menuController.getNameBuffer();
-            int pos = menuController.getNameCursorPos();
-            int idx = MenuController.CHARSET.indexOf(buf[pos]);
-            if (idx == -1) idx = 0;
-            idx = (idx + direction + MenuController.CHARSET.length()) % MenuController.CHARSET.length();
-            buf[pos] = MenuController.CHARSET.charAt(idx);
+            menuController.moveNameKeyboard(direction > 0 ? 1 : -1, 0);
             hudController.update();
             return;
         }
@@ -1549,8 +1598,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         }
         else if (mDialMode == DIAL_MODE_EXPOSURE) {
             int ev = p.getExposureCompensation();
-            p.setExposureCompensation(Math.max(p.getMinExposureCompensation(), Math.min(p.getMaxExposureCompensation(), ev + d)));
+            int nextEv = Math.max(p.getMinExposureCompensation(), Math.min(p.getMaxExposureCompensation(), ev + d));
+            p.setExposureCompensation(nextEv);
             try { c.setParameters(p); } catch (Exception e) {}
+            RTLProfile activeProfile = recipeManager.getCurrentProfile();
+            if (activeProfile != null) {
+                activeProfile.exposureCompensation = nextEv;
+                recipeManager.savePreferences();
+            }
         }
         else if (mDialMode == DIAL_MODE_PASM) {
             if (hasPhysicalPasmDial) return; // <-- NEW: Prevent software override on A7II!
@@ -2526,9 +2581,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     }
     @Override public void processSelectedQueuedPhotos(boolean[] selected) {
         if (processingQueueManager == null) return;
-        int selectedCount = processingQueueManager.moveSelectedToFrontForMode(selected, ProcessingQueueManager.MODE_MANUAL);
+        int selectedCount = processingQueueManager.moveSelectedToFrontForMode(selected, currentQueueMode());
         updateMainHUD();
-        if (selectedCount > 0) startQueuedProcessing(true, selectedCount);
+        if (selectedCount > 0) startQueuedProcessing(processingFrequency == PROCESSING_FREQUENCY_MANUAL, selectedCount);
     }
     @Override public void clearSelectedQueuedPhotos(boolean[] selected) {
         if (processingQueueManager != null) {

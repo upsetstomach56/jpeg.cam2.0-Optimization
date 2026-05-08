@@ -13,6 +13,7 @@ public class MatrixManager {
     private List<String> matrixNames = new ArrayList<String>();
     private List<int[]> matrixValues = new ArrayList<int[]>();
     private List<String> matrixNotes = new ArrayList<String>();
+    private List<File> matrixFiles = new ArrayList<File>();
 
     public MatrixManager() {
         matrixDir = new File(Filepaths.getAppDir(), "MATRIX");
@@ -23,6 +24,7 @@ public class MatrixManager {
         matrixNames.clear();
         matrixValues.clear();
         matrixNotes.clear();
+        matrixFiles.clear();
 
         File[] files = matrixDir.listFiles();
         if (files == null) return;
@@ -60,6 +62,7 @@ public class MatrixManager {
             matrixNames.add(uiName);
             matrixValues.add(values);
             matrixNotes.add(json.optString("note", "User defined matrix."));
+            matrixFiles.add(file);
         } catch (Exception e) {
             android.util.Log.e("JPEG.CAM", "Failed to load matrix: " + file.getName());
         }
@@ -98,4 +101,11 @@ public class MatrixManager {
     public int[] getValues(int index) { return matrixValues.get(index); }
     public String getNote(int index) { return matrixNotes.get(index); }
     public int getCount() { return matrixNames.size(); }
+    public boolean deleteMatrix(int index) {
+        if (index < 0 || index >= matrixFiles.size()) return false;
+        File file = matrixFiles.get(index);
+        boolean deleted = file != null && file.exists() && file.delete();
+        scanMatrices();
+        return deleted;
+    }
 }

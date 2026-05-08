@@ -1,0 +1,78 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JPEG.CAM Web Dashboard Options</title>
+  <style>
+    :root { color-scheme: dark; --bg:#101214; --panel:#181b1e; --line:#2a3034; --text:#e9ecec; --muted:#8b969b; --accent:#d98238; --green:#4ba653; --red:#d64b3a; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family: Arial, sans-serif; }
+    header { padding:22px 28px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; }
+    h1 { font-size:18px; margin:0; letter-spacing:.08em; }
+    main { display:grid; grid-template-columns:repeat(3,minmax(260px,1fr)); gap:22px; padding:24px; }
+    .option { border:1px solid var(--line); background:var(--panel); border-radius:8px; overflow:hidden; min-height:650px; }
+    .label { padding:14px 16px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; }
+    .label strong { color:var(--accent); letter-spacing:.08em; font-size:13px; }
+    .screen { padding:16px; }
+    .topbar,.tabs,.actions,.grid,.sidebar,.details,.strip { display:flex; gap:8px; }
+    .topbar { justify-content:space-between; align-items:center; margin-bottom:14px; }
+    .pill,.tab,.button { border:1px solid var(--line); border-radius:6px; padding:8px 10px; color:var(--muted); font-size:11px; font-weight:700; }
+    .tab.active,.button.primary { background:var(--accent); border-color:var(--accent); color:white; }
+    .tab.green { background:var(--green); border-color:var(--green); color:white; }
+    .button.danger { background:var(--red); border-color:var(--red); color:white; }
+    .actions { justify-content:space-between; margin:12px 0; }
+    .grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
+    .thumb { aspect-ratio:16/10; background:linear-gradient(145deg,#444,#1d2225); border-radius:6px; border:1px solid var(--line); position:relative; }
+    .thumb:after { content:"DSC01070.JPG"; position:absolute; left:8px; bottom:8px; font-size:9px; color:var(--muted); }
+    .wide { grid-column:span 2; }
+    .two-col { display:grid; grid-template-columns:96px 1fr; gap:12px; }
+    .sidebar { flex-direction:column; }
+    .details { margin-top:12px; flex-direction:column; border:1px solid var(--line); border-radius:6px; padding:12px; color:var(--muted); font-size:11px; line-height:1.6; }
+    .strip { flex-direction:column; margin-top:12px; }
+    .row { display:grid; grid-template-columns:76px 1fr 70px; gap:10px; align-items:center; border:1px solid var(--line); border-radius:6px; padding:8px; }
+    .mini { height:46px; background:linear-gradient(145deg,#444,#202529); border-radius:4px; }
+    @media (max-width:900px){ main{grid-template-columns:1fr;} }
+  </style>
+</head>
+<body>
+  <header><h1>JPEG.CAM WEB DASHBOARD OPTIONS</h1><span class="pill">Pick one direction</span></header>
+  <main>
+    <section class="option">
+      <div class="label"><strong>OPTION A</strong><span>Compact Gallery</span></div>
+      <div class="screen">
+        <div class="topbar"><span>JPEG.CAM</span><span class="pill">18.4GB FREE</span></div>
+        <div class="tabs"><span class="tab green">GRADED PHOTOS</span><span class="tab">ORIGINAL PHOTOS</span></div>
+        <div class="actions"><span class="pill">3 SELECTED</span><span><span class="button danger">DELETE</span> <span class="button primary">DOWNLOAD</span></span></div>
+        <div class="grid"><div class="thumb"></div><div class="thumb"></div><div class="thumb"></div><div class="thumb"></div><div class="thumb"></div><div class="thumb"></div></div>
+      </div>
+    </section>
+    <section class="option">
+      <div class="label"><strong>OPTION B</strong><span>Sidebar Navigation</span></div>
+      <div class="screen two-col">
+        <div class="sidebar">
+          <span class="tab green">GRADED</span><span class="tab">ORIGINALS</span><span class="tab">IMPORT</span><span class="tab">STATUS</span>
+        </div>
+        <div>
+          <div class="topbar"><span>GRADED PHOTOS</span><span class="pill">TODAY</span></div>
+          <div class="grid"><div class="thumb"></div><div class="thumb"></div><div class="thumb"></div><div class="thumb"></div></div>
+          <div class="details">Selected: DSC01070.JPG<br>Actions: preview, download, delete from SD card.</div>
+        </div>
+      </div>
+    </section>
+    <section class="option">
+      <div class="label"><strong>OPTION C</strong><span>Review Desk</span></div>
+      <div class="screen">
+        <div class="topbar"><span>GRADED PHOTOS</span><span><span class="button danger">DELETE SELECTED</span> <span class="button primary">DOWNLOAD</span></span></div>
+        <div class="thumb wide" style="height:230px"></div>
+        <div class="details">Large preview first, fast film-review workflow, selected photo metadata visible without opening a modal.</div>
+        <div class="strip">
+          <div class="row"><div class="mini"></div><span>DSC01070.JPG</span><span class="pill">4.2MB</span></div>
+          <div class="row"><div class="mini"></div><span>DSC01069.JPG</span><span class="pill">4.1MB</span></div>
+          <div class="row"><div class="mini"></div><span>DSC01068.JPG</span><span class="pill">4.3MB</span></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

@@ -35,6 +35,7 @@ public class HudController {
     private static final int SEL_BACK = -2;
     private static final int SEL_MATRIX_SAVED = -1;
     private static final int SEL_MATRIX_SAVE_NEW = -3;
+    private static final int SEL_MATRIX_DELETE = -4;
 
     // -----------------------------------------------------------------------
     // Host callback
@@ -90,6 +91,9 @@ public class HudController {
     private final LinearLayout   matrixActions;
     private final TextView       matrixSavedAction;
     private final TextView       matrixSaveAction;
+    private final TextView       matrixDeleteAction;
+    private final LinearLayout   keyboardOverlay;
+    private final TextView[]     keyboardKeys = new TextView[MenuController.NAME_KEY_COUNT];
     private final FrameLayout    wbGrid;
     private final View           wbCursor;
     private final TextView       wbValueText;
@@ -183,15 +187,46 @@ public class HudController {
         matrixActions.setVisibility(View.GONE);
         matrixSavedAction = makeMatrixAction(ctx, "SAVED MATRIX\nNONE", font);
         matrixSaveAction = makeMatrixAction(ctx, "SAVE NEW\nNAME", font);
+        matrixDeleteAction = makeMatrixAction(ctx, "DELETE SAVED\nNONE", font);
         LinearLayout.LayoutParams savedActionLp = new LinearLayout.LayoutParams(0, -2, 1.0f);
         savedActionLp.setMargins(5, 0, 5, 0);
         matrixActions.addView(matrixSavedAction, savedActionLp);
         LinearLayout.LayoutParams saveActionLp = new LinearLayout.LayoutParams(0, -2, 1.0f);
         saveActionLp.setMargins(5, 0, 5, 0);
         matrixActions.addView(matrixSaveAction, saveActionLp);
+        LinearLayout.LayoutParams deleteActionLp = new LinearLayout.LayoutParams(0, -2, 1.0f);
+        deleteActionLp.setMargins(5, 0, 5, 0);
+        matrixActions.addView(matrixDeleteAction, deleteActionLp);
         FrameLayout.LayoutParams matrixActionsLp = new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM);
         matrixActionsLp.setMargins(0, 0, 0, 130);
         mainUIContainer.addView(matrixActions, matrixActionsLp);
+
+        keyboardOverlay = new LinearLayout(ctx);
+        keyboardOverlay.setOrientation(LinearLayout.VERTICAL);
+        keyboardOverlay.setPadding(18, 10, 18, 16);
+        UiTheme.panel(keyboardOverlay);
+        keyboardOverlay.setVisibility(View.GONE);
+        int keyIndex = 0;
+        int keyRows = (MenuController.NAME_KEY_COUNT + MenuController.NAME_KEY_COLUMNS - 1) / MenuController.NAME_KEY_COLUMNS;
+        for (int r = 0; r < keyRows; r++) {
+            LinearLayout row = new LinearLayout(ctx);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER);
+            for (int c = 0; c < MenuController.NAME_KEY_COLUMNS; c++) {
+                TextView key = makeMatrixAction(ctx, "", font);
+                key.setTextSize(16);
+                keyboardKeys[keyIndex] = key;
+                LinearLayout.LayoutParams keyLp = new LinearLayout.LayoutParams(0, -2, 1.0f);
+                keyLp.setMargins(4, 4, 4, 4);
+                row.addView(key, keyLp);
+                keyIndex++;
+                if (keyIndex >= MenuController.NAME_KEY_COUNT) break;
+            }
+            keyboardOverlay.addView(row, new LinearLayout.LayoutParams(-1, -2));
+        }
+        FrameLayout.LayoutParams keyboardLp = new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM);
+        keyboardLp.setMargins(10, 0, 10, 24);
+        mainUIContainer.addView(keyboardOverlay, keyboardLp);
 
         // WB grid (mode 2 — special cursor UI)
         wbGrid = new FrameLayout(ctx);
@@ -253,6 +288,8 @@ public class HudController {
     public void    setSelection(int sel) { selection = sel; markNavigating(); }
     public boolean isValueEditing() { return valueEditing; }
     public boolean isMatrixSaveAction() { return mode == 0 && selection == SEL_MATRIX_SAVE_NEW; }
+    public boolean isMatrixDeleteAction() { return mode == 0 && selection == SEL_MATRIX_DELETE; }
+    public int getActiveMatrixIndex() { return activeMatrixIndex; }
 
     /** Public immediate refresh (for use from MainActivity enter/exit logic). */
     public void update()         { refresh(); }
@@ -338,6 +375,33 @@ public class HudController {
         refresh();
     }
 
+    public void beginMatrixDeleteConfirm() {
+        MatrixManager mm = host.getMatrixManager();
+        if (mm == null || mm.getCount() <= 0) return;
+        if (activeMatrixIndex < 0 || activeMatrixIndex >= mm.getCount()) activeMatrixIndex = 0;
+        selection = 0;
+        valueEditing = false;
+        markNavigating();
+        refresh();
+    }
+
+    public void closeMatrixDeleteConfirm() {
+        selection = SEL_MATRIX_DELETE;
+        valueEditing = false;
+        markNavigating();
+        refresh();
+    }
+
+    public void refreshAfterMatrixDelete() {
+        MatrixManager mm = host.getMatrixManager();
+        if (mm != null && activeMatrixIndex >= mm.getCount()) activeMatrixIndex = Math.max(0, mm.getCount() - 1);
+        selection = SEL_MATRIX_SAVED;
+        valueEditing = false;
+        isScrollingMatrices = false;
+        markNavigating();
+        refresh();
+    }
+
     public void refreshRecipeBrowserAfterDelete() {
         refreshVaultItems();
         int count = getVaultRecipeCount();
@@ -391,9 +455,11 @@ public class HudController {
             overlay.setVisibility(View.GONE);
             if (tooltip != null) tooltip.setVisibility(View.GONE);
             wbGrid.setVisibility(View.VISIBLE);
+            keyboardOverlay.setVisibility(View.GONE);
         } else {
             overlay.setVisibility(View.VISIBLE);
             wbGrid.setVisibility(View.GONE);
+            keyboardOverlay.setVisibility(View.GONE);
         }
         refresh();
         startFlash();
@@ -411,6 +477,7 @@ public class HudController {
         overlay.setVisibility(View.GONE);
         if (tooltip != null) tooltip.setVisibility(View.GONE);
         matrixActions.setVisibility(View.GONE);
+        keyboardOverlay.setVisibility(View.GONE);
         wbGrid.setVisibility(View.GONE);
         host.onHudClosed();
     }
@@ -427,6 +494,7 @@ public class HudController {
         overlay.setVisibility(View.GONE);
         if (tooltip != null) tooltip.setVisibility(View.GONE);
         matrixActions.setVisibility(View.GONE);
+        keyboardOverlay.setVisibility(View.GONE);
         wbGrid.setVisibility(View.GONE);
     }
 
@@ -437,6 +505,7 @@ public class HudController {
         overlay.setVisibility(View.GONE);
         if (tooltip != null) tooltip.setVisibility(View.GONE);
         matrixActions.setVisibility(View.GONE);
+        keyboardOverlay.setVisibility(View.GONE);
         wbGrid.setVisibility(View.GONE);
     }
 
@@ -527,6 +596,12 @@ public class HudController {
 
     private void moveSelection(int delta) {
         int maxIdx = maxSelectionForMode();
+        if (mode == 0 && host.getMenuController().isConfirmingDelete()) {
+            selection = selection == 0 ? 1 : 0;
+            markNavigating();
+            refresh();
+            return;
+        }
         if (mode == 0) {
             moveMatrixSelection(delta);
         } else if (selection == -2) {
@@ -548,7 +623,7 @@ public class HudController {
 
     private void moveMatrixSelection(int delta) {
         int[] order = new int[] {
-                SEL_BACK, SEL_MATRIX_SAVED, SEL_MATRIX_SAVE_NEW,
+                SEL_BACK, SEL_MATRIX_SAVED, SEL_MATRIX_SAVE_NEW, SEL_MATRIX_DELETE,
                 0, 1, 2, 3, 4, 5, 6, 7, 8
         };
         int pos = 0;
@@ -709,6 +784,24 @@ public class HudController {
         UiTheme.titlePanel(headerTitle, UiTheme.ACCENT);
     }
 
+    private void renderNameKeyboard(MenuController mc) {
+        overlay.setVisibility(View.GONE);
+        matrixActions.setVisibility(View.GONE);
+        wbGrid.setVisibility(View.GONE);
+        if (tooltip != null) tooltip.setVisibility(View.GONE);
+        renderHeader("NAME: " + new String(mc.getNameBuffer()).trim());
+        headerBack.setText("CANCEL");
+        keyboardOverlay.setVisibility(View.VISIBLE);
+        int selectedKey = mc.getNameKeySelection();
+        for (int i = 0; i < keyboardKeys.length; i++) {
+            TextView key = keyboardKeys[i];
+            key.setText(mc.getNameKeyLabel(i));
+            styleMatrixAction(key, i == selectedKey, false);
+        }
+        TextView tvTop = host.getTvTopStatus();
+        if (tvTop != null) tvTop.setVisibility(View.GONE);
+    }
+
     private void refresh() {
         if (!active) return; // Never render when HUD is not open
         RTLProfile p   = host.getRecipeManager().getCurrentProfile();
@@ -720,6 +813,12 @@ public class HudController {
         int activeCells = 0;
         int selectedCell = selection;
         String[] labels = new String[9]; String[] values = new String[9];
+
+        if (mc.isNamingMode() && (mode == 0 || mode == 10)) {
+            renderNameKeyboard(mc);
+            return;
+        }
+        keyboardOverlay.setVisibility(View.GONE);
 
         // --- MODE 2: WB GRID ---
         if (mode == 2) {
@@ -760,6 +859,17 @@ public class HudController {
         }
 
         if (mode == 0) {
+            if (mc.isConfirmingDelete()) {
+                matrixActions.setVisibility(View.GONE);
+                renderHeader("DELETE MATRIX");
+                activeCells = 2;
+                labels = new String[]{"DELETE MATRIX?","CANCEL"};
+                String deleteName = (mm != null && mm.getCount() > 0 && activeMatrixIndex >= 0 && activeMatrixIndex < mm.getCount())
+                        ? mm.getNames().get(activeMatrixIndex) : "NONE";
+                values[0] = deleteName;
+                values[1] = "[ GO BACK ]";
+                tip = selection == 0 ? "WARNING: This will permanently delete the saved matrix from the SD card." : "Cancel and return to matrix settings.";
+            } else {
             matrixActions.setVisibility(View.VISIBLE);
             activeCells = 9;
             labels = new String[]{"R-R","G-R","B-R","R-G","G-G","B-G","R-B","G-B","B-B"};
@@ -787,18 +897,22 @@ public class HudController {
                     tvTop.setText(sb.toString()); tvTop.setTextColor(UiTheme.WARN);
                 } else {
                     tvTop.setText("< BACK    MATRIX: " + currentName);
-                    tvTop.setTextColor(selection == -2 || selection == SEL_MATRIX_SAVED || selection == SEL_MATRIX_SAVE_NEW ? selectedNavigationColor() : UiTheme.TEXT);
+                    tvTop.setTextColor(selection == -2 || selection == SEL_MATRIX_SAVED || selection == SEL_MATRIX_SAVE_NEW || selection == SEL_MATRIX_DELETE ? selectedNavigationColor() : UiTheme.TEXT);
                 }
                 tvTop.setVisibility(View.VISIBLE);
             }
             matrixSavedAction.setText("SELECT SAVED\n" + ((mm != null && mm.getCount() > 0) ? currentName : "NONE"));
             matrixSaveAction.setText("SAVE + NAME\nCUSTOM");
+            matrixDeleteAction.setText("DELETE SAVED\n" + ((mm != null && mm.getCount() > 0) ? currentName : "NONE"));
             styleMatrixAction(matrixSavedAction, selection == SEL_MATRIX_SAVED, valueEditing && selection == SEL_MATRIX_SAVED);
             styleMatrixAction(matrixSaveAction, selection == SEL_MATRIX_SAVE_NEW, false);
+            styleMatrixAction(matrixDeleteAction, selection == SEL_MATRIX_DELETE, false);
             if (selection==SEL_MATRIX_SAVED) tip=(valueEditing ? "Cycle saved matrices with the D-Pad. Press ENTER to confirm.\n" : "Press ENTER to choose from saved matrices.\n") + "FILE: "+matrixNote+"\n"+balText;
             else if (selection==SEL_MATRIX_SAVE_NEW) tip="Name and save the current RGB matrix to the SD card.\n"+balText;
+            else if (selection==SEL_MATRIX_DELETE) tip="Delete the selected saved RGB matrix from the SD card.\n"+balText;
             else { String[] t={"Red sensitivity to real-world Red light (Primary - baseline is 100)","Pushes Green light into Red channel (baseline is 0)","Pushes Blue light into Red channel (baseline is 0)","Pushes Red light into Green channel (baseline is 0)","Green sensitivity to real-world Green light (Primary - baseline is 100)","Pushes Blue light into Green channel (baseline is 0)","Pushes Red light into Blue channel (baseline is 0)","Pushes Green light into Blue channel (baseline is 0)","Blue sensitivity to real-world Blue light (Primary - baseline is 100)."}; if(selection>=0&&selection<t.length) tip=t[selection]+"\n"+balText; }
             for (int i=0;i<9;i++) values[i]=p.advMatrix[i]+"%";
+            }
 
         } else if (mode == 1) {
             activeCells=6; labels=new String[]{"RED","GRN","BLU","CYN","MAG","YEL"};
@@ -900,7 +1014,7 @@ public class HudController {
             tooltip.setText(tip);
             tooltip.setVisibility(tip.isEmpty()?View.GONE:View.VISIBLE);
             if(!tip.isEmpty()){
-                if(selection == SEL_MATRIX_SAVED || selection == SEL_MATRIX_SAVE_NEW){
+                if(selection == SEL_MATRIX_SAVED || selection == SEL_MATRIX_SAVE_NEW || selection == SEL_MATRIX_DELETE){
                     UiTheme.actionPanel(tooltip, UiTheme.ACCENT, true, true);
                     tooltip.setTextColor(UiTheme.TEXT);
                 } else {

@@ -135,6 +135,10 @@ public class HardwareRecipeApplier {
             }
         }
 
+        int ev = Math.max(p.getMinExposureCompensation(),
+                Math.min(p.getMaxExposureCompensation(), prof.exposureCompensation));
+        p.setExposureCompensation(ev);
+
         // 6-Axis Color Depth
         if (p.get("color-depth-red") != null) {
             p.set("color-depth-red",     String.valueOf(prof.colorDepthRed));

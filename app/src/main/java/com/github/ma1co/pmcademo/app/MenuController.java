@@ -40,6 +40,11 @@ public class MenuController {
 
     /** Character set used for on-camera name entry (menu AND HUD naming modes). */
     public static final String CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -_";
+    public static final int NAME_KEY_DELETE = CHARSET.length();
+    public static final int NAME_KEY_CONFIRM = CHARSET.length() + 1;
+    public static final int NAME_KEY_CANCEL = CHARSET.length() + 2;
+    public static final int NAME_KEY_COUNT = CHARSET.length() + 3;
+    public static final int NAME_KEY_COLUMNS = 7;
     private static final int PROCESSING_FREQUENCY_MANUAL = -1;
     private static final int MANUAL_QUEUE_PAGE_SIZE = 5;
     private static final int MANUAL_QUEUE_THUMB_WIDTH = 96;
@@ -199,6 +204,8 @@ public class MenuController {
     // Shared name buffer — also used by HudController for matrix / vault naming
     private char[]   nameBuffer        = "CUSTOM      ".toCharArray();
     private int      nameCursorPos     = 0;
+    private int      nameKeySelection  = 0;
+    private boolean  nameKeyboardDirty = false;
 
     // -----------------------------------------------------------------------
     // Owned views
@@ -420,7 +427,13 @@ public class MenuController {
     public LinearLayout getContainer(){ return container; }
 
     // Setters for HUD enter-mode interactions
-    public void setNamingMode(boolean v)       { isNaming = v; }
+    public void setNamingMode(boolean v)       {
+        isNaming = v;
+        if (v) {
+            nameKeySelection = 0;
+            nameKeyboardDirty = false;
+        }
+    }
     public void setConfirmingDelete(boolean v) { isConfirmingDelete = v; }
     public void resetNameCursor()              { nameCursorPos = 0; }
     /** Fill the 12-char name buffer in-place from a string (pads/truncates). */
@@ -432,6 +445,47 @@ public class MenuController {
     }
     /** Reset name buffer to "CUSTOM      " in-place. */
     public void resetNameBuffer() { fillNameBuffer("CUSTOM"); }
+    public int getNameKeySelection() { return nameKeySelection; }
+    public int getNameKeyCount() { return NAME_KEY_COUNT; }
+    public String getNameKeyLabel(int index) {
+        if (index >= 0 && index < CHARSET.length()) {
+            char c = CHARSET.charAt(index);
+            return c == ' ' ? "SPACE" : String.valueOf(c);
+        }
+        if (index == NAME_KEY_DELETE) return "DEL";
+        if (index == NAME_KEY_CONFIRM) return "OK";
+        if (index == NAME_KEY_CANCEL) return "CANCEL";
+        return "";
+    }
+    public void moveNameKeyboard(int dx, int dy) {
+        int rows = (NAME_KEY_COUNT + NAME_KEY_COLUMNS - 1) / NAME_KEY_COLUMNS;
+        int col = nameKeySelection % NAME_KEY_COLUMNS;
+        int row = nameKeySelection / NAME_KEY_COLUMNS;
+        col = (col + dx + NAME_KEY_COLUMNS) % NAME_KEY_COLUMNS;
+        row = (row + dy + rows) % rows;
+        int next = row * NAME_KEY_COLUMNS + col;
+        if (next >= NAME_KEY_COUNT) next = NAME_KEY_COUNT - 1;
+        nameKeySelection = next;
+    }
+    public int activateNameKeyboardKey() {
+        int key = nameKeySelection;
+        if (key == NAME_KEY_CONFIRM || key == NAME_KEY_CANCEL) return key;
+        if (!nameKeyboardDirty) {
+            for (int i = 0; i < nameBuffer.length; i++) nameBuffer[i] = ' ';
+            nameCursorPos = 0;
+            nameKeyboardDirty = true;
+        }
+        if (key == NAME_KEY_DELETE) {
+            if (nameCursorPos > 0) nameCursorPos--;
+            nameBuffer[nameCursorPos] = ' ';
+            return key;
+        }
+        if (key >= 0 && key < CHARSET.length()) {
+            nameBuffer[nameCursorPos] = CHARSET.charAt(key);
+            if (nameCursorPos < nameBuffer.length - 1) nameCursorPos++;
+        }
+        return key;
+    }
     /** Re-render the menu (e.g. after returning from a HUD overlay). */
     public void refreshDisplay()               { render(); }
 
@@ -881,6 +935,8 @@ public class MenuController {
                 String[] dro = {"OFF","AUTO","LVL 1","LVL 2","LVL 3","LVL 4","LVL 5"};
                 int idx = 0; for (int i = 0; i < dro.length; i++) if (dro[i].equalsIgnoreCase(p.dro)) idx = i;
                 p.dro = dro[(idx + dir + dro.length) % dro.length];
+            } else if (sel == 5) {
+                p.exposureCompensation = clampExposureCompensation(p.exposureCompensation + dir);
             }
         } else if (currentPage == 2) {
             if (sel == 1) p.whiteBalance = cycleKelvin(p.whiteBalance, dir);
@@ -961,6 +1017,27 @@ public class MenuController {
         return CUSTOM_BUTTON_LABELS[clampCustomButtonAction(action)];
     }
 
+    private int clampExposureCompensation(int value) {
+        Camera cam = host.getCamera();
+        if (cam == null) return value;
+        try {
+            Camera.Parameters p = cam.getParameters();
+            return Math.max(p.getMinExposureCompensation(), Math.min(p.getMaxExposureCompensation(), value));
+        } catch (Exception e) {
+            return value;
+        }
+    }
+
+    private String formatExposureCompensation(int value) {
+        Camera cam = host.getCamera();
+        float step = 0.33333334f;
+        try {
+            if (cam != null) step = cam.getParameters().getExposureCompensationStep();
+        } catch (Exception ignored) {}
+        float ev = value * step;
+        return String.format("%+.1f EV", ev);
+    }
+
     private void handleConnectionAction() {
         if (selection == 0) {
             hotspotStatus = "Starting...";
@@ -1034,7 +1111,7 @@ public class MenuController {
 
         if (currentMainTab == 0) {
             if (currentPage == 1) {
-                ic = 5;
+                ic = 6;
                 String raw = p.profileName != null ? p.profileName : "";
                 while (raw.length() < 8) raw += " ";
                 if (raw.length() > 8) raw = raw.substring(0, 8);
@@ -1057,6 +1134,7 @@ public class MenuController {
                 setRow(2, "Foundation Base",       fnd);
                 setRow(3, "Tone & Style",          ts);
                 setRow(4, "DRO (Dynamic Range)",   p.dro != null ? p.dro.toUpperCase() : "OFF");
+                setRow(5, "Default Exposure Comp", formatExposureCompensation(p.exposureCompensation));
             } else if (currentPage == 2) {
                 ic = 4;
                 String ab = p.wbShift == 0 ? "0" : (p.wbShift < 0 ? "B"+Math.abs(p.wbShift) : "A"+p.wbShift);
@@ -1156,7 +1234,7 @@ public class MenuController {
         if (queueCount > 0) {
             setManualQueueSubtitle(queueCount, end, thumbsLoading);
         } else {
-            tvSubtitle.setText("Manual Queue (EMPTY)");
+            tvSubtitle.setText("Photo Queue (EMPTY)");
         }
         if (queueCount == 0) {
             setRow(row++, "No Queued Photos", "");
@@ -1338,7 +1416,7 @@ public class MenuController {
     }
 
     private void setManualQueueSubtitle(int queueCount, int end, boolean thumbsLoading) {
-        tvSubtitle.setText("Manual Queue " + (manualQueueOffset + 1) + "-" + end + "/" + queueCount
+        tvSubtitle.setText("Photo Queue " + (manualQueueOffset + 1) + "-" + end + "/" + queueCount
                 + (thumbsLoading ? " | LOADING" : ""));
     }
 
@@ -1346,7 +1424,7 @@ public class MenuController {
         if (!manualQueueOpen) return;
         int queueCount = host.getQueuedPhotoCount();
         if (queueCount <= 0) {
-            tvSubtitle.setText("Manual Queue (EMPTY)");
+            tvSubtitle.setText("Photo Queue (EMPTY)");
             return;
         }
 
@@ -1455,11 +1533,8 @@ public class MenuController {
             return true;
         }
         if (selection == 5) {
-            if (host.getProcessingFrequency() == PROCESSING_FREQUENCY_MANUAL) {
+            if (host.getProcessingFrequency() == PROCESSING_FREQUENCY_MANUAL || host.getQueuedPhotoCount() > 0) {
                 openManualQueue();
-            } else if (host.getQueuedPhotoCount() > 0) {
-                host.forceProcessQueuedPhotos();
-                close();
             }
             return true;
         }
@@ -1637,7 +1712,7 @@ public class MenuController {
                 "Processing Frequency", frequencyLabel,
                 UiTheme.ACCENT, selection == 4, true, isEditing && selection == 4);
 
-        String queueLabel = freq == PROCESSING_FREQUENCY_MANUAL ? "MANUAL QUEUE" : "PROCESS QUEUE";
+        String queueLabel = "PHOTO QUEUE";
         String queueValue = queueCount > 0 ? (queueCount + " WAITING") : "EMPTY";
         boolean queueActive = freq == PROCESSING_FREQUENCY_MANUAL || queueCount > 0;
         styleHomeAction(homeQueueAction, homeQueueLabel, homeQueueValue,
