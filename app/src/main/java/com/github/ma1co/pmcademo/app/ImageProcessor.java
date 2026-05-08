@@ -203,10 +203,18 @@ public class ImageProcessor {
                 fileReadyMs = System.currentTimeMillis();
 
                 boolean camGrainLoaded = false;
-                if (p.camFile != null) {
+                boolean camRecipe = p.camFile != null && p.camFile.trim().length() > 0;
+                if (camRecipe) {
                     String camPath = new File(Filepaths.getRecipeDir(), p.camFile).getAbsolutePath();
                     LutEngine.CamLoadResult cam = mEngine.loadFromCam(camPath, Filepaths.getAppDir());
-                    if (!cam.lutLoaded && p.opacity > 0) return "FAILED";
+                    if (!cam.lutLoaded && p.opacity > 0) {
+                        Log.w("COOKBOOK", "CAM LUT failed, falling back to loose LUT or no LUT for " + p.camFile);
+                        if (hasUsableLut(lutPath, lutName)) {
+                            if (!mEngine.loadLut(lutPath, lutName)) mEngine.loadLut("NONE", "OFF");
+                        } else {
+                            mEngine.loadLut("NONE", "OFF");
+                        }
+                    }
                     camGrainLoaded = cam.grainLoaded;
                 } else if (p.opacity > 0 && hasUsableLut(lutPath, lutName)) {
                     if (!mEngine.loadLut(lutPath, lutName)) return "FAILED";
@@ -218,7 +226,7 @@ public class ImageProcessor {
                 File dir = new File(outDir);
                 if (!dir.exists()) dir.mkdirs();
 
-                File outFile = new File(dir, buildOutputName(original, p));
+                File outFile = new File(dir, original.getName());
 
                 // 0=1/4 RES (4), 1=HALF RES (2), 2=FULL RES (1)
                 scale = (qualityIdx == 0) ? 4 : (qualityIdx == 2 ? 1 : 2);

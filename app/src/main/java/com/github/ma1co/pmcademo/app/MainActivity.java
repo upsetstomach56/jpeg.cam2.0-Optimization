@@ -8,7 +8,10 @@ import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.Matrix;
+import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.hardware.Camera;
 import android.media.ExifInterface;
@@ -54,6 +57,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     private static final int SCANNER_ARM_TIMEOUT_MS = 120000;
     private static final long QUEUE_FALLBACK_PROCESS_MS = 14000;
     private static final int PROCESSING_FREQUENCY_MANUAL = -1;
+    private static final long MONO_PREVIEW_FRAME_MS = 250;
+    private static final int MONO_PREVIEW_SAMPLE = 6;
     private static final String[] MIN_APERTURE_SHUTTER_VALUES = {"off", "1/30", "1/60", "1/125", "1/250", "1/500"};
 
     private SonyCameraManager cameraManager;
@@ -84,6 +89,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 
     private SurfaceView mSurfaceView;
     private boolean hasSurface = false;
+    private MonochromePreviewOverlay monochromePreviewOverlay;
+    private Camera.PreviewCallback monochromePreviewCallback;
+    private long lastMonochromePreviewMs = 0;
 
     private FrameLayout mainUIContainer;
     private LinearLayout llBottomBar;
@@ -404,6 +412,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         mSurfaceView.getHolder().addCallback(this);
         mSurfaceView.getHolder().setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
         rootLayout.addView(mSurfaceView, new FrameLayout.LayoutParams(-1, -1));
+        monochromePreviewOverlay = new MonochromePreviewOverlay(this);
+        monochromePreviewOverlay.setVisibility(View.GONE);
+        rootLayout.addView(monochromePreviewOverlay, new FrameLayout.LayoutParams(-1, -1));
         mSurfaceView.post(new Runnable() {
             @Override
             public void run() {
@@ -1829,26 +1840,42 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             if (!"aperture-priority".equals(p.getSceneMode())) return;
 
             String value = MIN_APERTURE_SHUTTER_VALUES[normalizeMinApertureShutterIndex(minApertureShutterIndex)];
-            String flat = p.flatten();
             String[] keys = {
                     "sony-auto-iso-min-shutter-speed",
+                    "sony-autoiso-min-shutter-speed",
+                    "sony-auto-iso-minimum-shutter-speed",
+                    "sony-auto-iso-shutter-speed",
+                    "sony-iso-auto-min-shutter-speed",
                     "auto-iso-minimum-shutter-speed",
+                    "auto-iso-min-shutter-speed",
+                    "auto-iso-shutter-speed",
                     "iso-auto-min-shutter-speed",
+                    "iso-auto-minimum-shutter-speed",
+                    "minimum-shutter-speed",
                     "min-shutter-speed",
                     "sony-min-shutter-speed",
-                    "auto-shutter-speed-low-limit"
+                    "auto-shutter-speed-low-limit",
+                    "shutter-speed-low-limit"
             };
-            boolean changed = false;
+            boolean applied = false;
             for (int i = 0; i < keys.length; i++) {
-                String key = keys[i];
-                if (flat != null && flat.indexOf(key + "=") >= 0) {
-                    setCameraParameterString(p, key, value);
-                    changed = true;
-                }
+                applied = tryApplyCameraParameterString(c, keys[i], value) || applied;
             }
-            if (changed) c.setParameters(p);
+            if (!applied) Log.w("JPEG.CAM", "Minimum A-mode shutter key was not accepted by camera parameters");
         } catch (Throwable t) {
             Log.e("JPEG.CAM", "Failed to apply min aperture shutter", t);
+        }
+    }
+
+    private boolean tryApplyCameraParameterString(Camera c, String key, String value) {
+        try {
+            Camera.Parameters params = c.getParameters();
+            if (!"aperture-priority".equals(params.getSceneMode())) return false;
+            setCameraParameterString(params, key, value);
+            c.setParameters(params);
+            return true;
+        } catch (Throwable ignored) {
+            return false;
         }
     }
 
@@ -1869,66 +1896,46 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     // getWbString() removed — logic consolidated into HardwareRecipeApplier.
 
     private void applyLiveViewMonochromeToCamera(boolean enabled) {
+        if (monochromePreviewOverlay != null) {
+            monochromePreviewOverlay.setVisibility(enabled ? View.VISIBLE : View.GONE);
+            if (!enabled) monochromePreviewOverlay.clearFrame();
+        }
         if (cameraManager == null || cameraManager.getCamera() == null) return;
         try {
             Camera c = cameraManager.getCamera();
-            if (!enabled) {
-                HardwareRecipeApplier.apply(c, recipeManager.getCurrentProfile());
-                return;
-            }
-
-            boolean applied = false;
-            try {
-                Camera.Parameters p = c.getParameters();
-                List<String> effects = p.getSupportedColorEffects();
-                if (effects != null && effects.contains(Camera.Parameters.EFFECT_MONO)) {
-                    String current = p.getColorEffect();
-                    if (!Camera.Parameters.EFFECT_MONO.equals(current)) {
-                        p.setColorEffect(Camera.Parameters.EFFECT_MONO);
-                        c.setParameters(p);
-                    }
-                    applied = true;
-                }
-            } catch (Throwable ignored) {}
-
-            try {
-                Camera.Parameters p = c.getParameters();
-                boolean changed = false;
-                if (cameraParameterExists(p, "creative-style")) {
-                    setCameraParameterString(p, "creative-style", "mono");
-                    changed = true;
-                }
-                if (cameraParameterExists(p, "color-mode")) {
-                    setCameraParameterString(p, "color-mode", "mono");
-                    changed = true;
-                }
-                if (changed) {
-                    c.setParameters(p);
-                    applied = true;
-                }
-            } catch (Throwable ignored) {}
-
-            if (!applied) Log.w("JPEG.CAM", "Live view monochrome is not supported by this camera API");
+            if (enabled) installMonochromePreviewCallback(c);
+            else c.setPreviewCallback(null);
         } catch (Throwable t) {
-            Log.e("JPEG.CAM", "Failed to update live view monochrome", t);
+            Log.e("JPEG.CAM", "Failed to update live view monochrome overlay", t);
         }
     }
 
-    private boolean cameraParameterExists(Camera.Parameters params, String key) {
-        String flat = params != null ? params.flatten() : null;
-        return flat != null && flat.indexOf(key + "=") >= 0;
+    private void installMonochromePreviewCallback(final Camera camera) {
+        if (monochromePreviewCallback == null) {
+            monochromePreviewCallback = new Camera.PreviewCallback() {
+                @Override
+                public void onPreviewFrame(byte[] data, Camera c) {
+                    if (!prefLiveViewMonochrome || data == null || monochromePreviewOverlay == null) return;
+                    long now = System.currentTimeMillis();
+                    if (now - lastMonochromePreviewMs < MONO_PREVIEW_FRAME_MS) return;
+                    lastMonochromePreviewMs = now;
+                    try {
+                        Camera.Size size = c.getParameters().getPreviewSize();
+                        if (size != null) monochromePreviewOverlay.updateFromLuma(data, size.width, size.height, MONO_PREVIEW_SAMPLE);
+                    } catch (Throwable ignored) {}
+                }
+            };
+        }
+        camera.setPreviewCallback(monochromePreviewCallback);
     }
 
     private void prepareLiveViewMonochromeForCapture() {
-        if (!prefLiveViewMonochrome) return;
-        liveViewMonochromeSuspended = true;
-        applyLiveViewMonochromeToCamera(false);
+        liveViewMonochromeSuspended = false;
     }
 
     private void restoreLiveViewMonochromeAfterCapture() {
-        if (!liveViewMonochromeSuspended) return;
         liveViewMonochromeSuspended = false;
-        applyLiveViewMonochromeToCamera(prefLiveViewMonochrome);
+        if (prefLiveViewMonochrome) applyLiveViewMonochromeToCamera(true);
     }
 
     private void setAutoPowerOffMode(boolean enable) {
@@ -2549,6 +2556,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     @Override
     public void surfaceDestroyed(SurfaceHolder h) {
         hasSurface = false;
+        applyLiveViewMonochromeToCamera(false);
         if (cameraManager != null) cameraManager.close();
     }
 
@@ -2947,5 +2955,54 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         Camera c = cameraManager.getCamera();
         String fMode = c.getParameters().getFocusMode();
         cachedIsManualFocus = "manual".equals(fMode);
+    }
+
+    private static class MonochromePreviewOverlay extends View {
+        private Bitmap frame;
+        private Rect dst = new Rect();
+        private int[] pixels;
+
+        MonochromePreviewOverlay(Context context) {
+            super(context);
+            setBackgroundColor(Color.TRANSPARENT);
+        }
+
+        void updateFromLuma(byte[] luma, int width, int height, int sample) {
+            if (width <= 0 || height <= 0 || luma == null) return;
+            int step = Math.max(2, sample);
+            int outW = Math.max(1, width / step);
+            int outH = Math.max(1, height / step);
+            int count = outW * outH;
+            if (pixels == null || pixels.length != count) pixels = new int[count];
+            if (frame == null || frame.getWidth() != outW || frame.getHeight() != outH) {
+                frame = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888);
+            }
+
+            int index = 0;
+            for (int y = 0; y < outH; y++) {
+                int srcY = Math.min(height - 1, y * step);
+                int row = srcY * width;
+                for (int x = 0; x < outW; x++) {
+                    int srcX = Math.min(width - 1, x * step);
+                    int gray = luma[row + srcX] & 0xff;
+                    pixels[index++] = 0xff000000 | (gray << 16) | (gray << 8) | gray;
+                }
+            }
+            frame.setPixels(pixels, 0, outW, 0, 0, outW, outH);
+            postInvalidate();
+        }
+
+        void clearFrame() {
+            frame = null;
+            invalidate();
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            if (frame == null) return;
+            dst.set(0, 0, getWidth(), getHeight());
+            canvas.drawBitmap(frame, null, dst, null);
+        }
     }
 }

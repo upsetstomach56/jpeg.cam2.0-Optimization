@@ -1061,9 +1061,7 @@ public class MenuController {
             else if (sel == 3) rm.setPrefAel(clampCustomButtonAction(rm.getPrefAel() + dir));
             else if (sel == 4) rm.setPrefFn(clampCustomButtonAction(rm.getPrefFn() + dir));
         } else if (currentPage == 10) {
-            if (sel >= 0 && sel <= 5) {
-                host.adjustCameraControl(sel, dir);
-            } else if (sel == 6) {
+            if (sel == 0) {
                 host.setMinApertureShutterIndex(nextMinApertureShutterIndex(host.getMinApertureShutterIndex(), dir));
             }
         }
@@ -1175,7 +1173,7 @@ public class MenuController {
         else if (currentPage == 7) subtitle = "SETTINGS - Custom Buttons";
         else if (currentPage == 8) subtitle = "NETWORK - Web Dashboard";
         else if (currentPage == 9) subtitle = "SUPPORT - Resources";
-        else if (currentPage == 10) subtitle = "SETTINGS - Camera Controls";
+        else if (currentPage == 10) subtitle = "SETTINGS - Minimum Shutter";
         tvSubtitle.setText(subtitle);
 
         for (int i = 0; i < 8; i++) {
@@ -1299,14 +1297,8 @@ public class MenuController {
             setRow(3, "AEL Button",    customButtonLabel(rm.getPrefAel()));
             setRow(4, "FN Button",     customButtonLabel(rm.getPrefFn()));
         } else if (currentPage == 10) {
-            ic = 7;
-            setRow(0, "Shooting Mode",      host.getCameraControlValue(0));
-            setRow(1, "Shutter Speed",      host.getCameraControlValue(1));
-            setRow(2, "Aperture",           host.getCameraControlValue(2));
-            setRow(3, "ISO",                host.getCameraControlValue(3));
-            setRow(4, "Exposure Comp",      host.getCameraControlValue(4));
-            setRow(5, "Focus Mode",         host.getCameraControlValue(5));
-            setRow(6, "Min A-Mode Shutter", minApertureShutterLabel(host.getMinApertureShutterIndex()));
+            ic = 1;
+            setRow(0, "Min A-Mode Shutter", minApertureShutterLabel(host.getMinApertureShutterIndex()));
         } else if (currentPage == 8) {
             ic = 3;
             setRow(0, "Camera Hotspot", hotspotStatus);
@@ -1707,7 +1699,7 @@ public class MenuController {
 
     private String[] categoryPageLabels(int tab) {
         if (tab == 0) return new String[] {"BASE", "COLOR", "FX", "GRAIN", "ANALOG"};
-        if (tab == 1) return new String[] {"APP", "CAMERA", "BUTTONS"};
+        if (tab == 1) return new String[] {"APP", "SHUTTER", "BUTTONS"};
         if (tab == 2) return new String[] {"WEB"};
         return new String[] {"HELP"};
     }
