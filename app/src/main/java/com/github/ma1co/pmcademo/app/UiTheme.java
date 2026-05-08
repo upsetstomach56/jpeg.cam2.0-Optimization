@@ -17,6 +17,7 @@ public final class UiTheme {
     public static final int SURFACE_SOFT = Color.argb(188, 9, 14, 16);
     public static final int SURFACE_STRONG = Color.argb(248, 6, 9, 11);
     public static final int SURFACE_RAISED = Color.argb(214, 14, 18, 18);
+    public static final int MENU_BACKDROP = Color.rgb(5, 8, 10);
     public static int TEXT = Color.rgb(239, 246, 243);
     public static int TEXT_MUTED = Color.rgb(143, 157, 154);
     public static int TEXT_DIM = Color.rgb(68, 78, 78);

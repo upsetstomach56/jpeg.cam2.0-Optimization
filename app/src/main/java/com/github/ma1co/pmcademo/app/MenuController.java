@@ -266,7 +266,7 @@ public class MenuController {
 
         container = new LinearLayout(ctx);
         container.setOrientation(LinearLayout.VERTICAL);
-        UiTheme.clear(container);
+        container.setBackgroundColor(UiTheme.MENU_BACKDROP);
         container.setPadding(16, 12, 16, 12);
 
         headerBar = new LinearLayout(ctx);
@@ -302,13 +302,11 @@ public class MenuController {
 
         railColumn = new LinearLayout(ctx);
         railColumn.setOrientation(LinearLayout.VERTICAL);
-        railColumn.setPadding(0, 0, 10, 0);
-        bodyLayout.addView(railColumn, new LinearLayout.LayoutParams(138, -1));
+        railColumn.setVisibility(View.GONE);
 
         String[] railLabels = {"RECIPES", "SETTINGS", "QUEUE", "NETWORK", "SUPPORT"};
         for (int i = 0; i < railItems.length; i++) {
             railItems[i] = makeRailItem(ctx, railLabels[i]);
-            railColumn.addView(railItems[i]);
         }
 
         contentColumn = new LinearLayout(ctx);
@@ -1151,9 +1149,11 @@ public class MenuController {
 
         for (int i = 0; i < 8; i++) {
             rows[i].setVisibility(View.GONE);
-            thumbs[i].setVisibility(View.GONE);
-            thumbs[i].setImageBitmap(null);
-            thumbs[i].setTag(null);
+            if (thumbs[i].getVisibility() != View.GONE) {
+                thumbs[i].setVisibility(View.GONE);
+                thumbs[i].setImageBitmap(null);
+                thumbs[i].setTag(null);
+            }
             if (i < rowDividers.length && rowDividers[i] != null) rowDividers[i].setVisibility(View.GONE);
         }
 
@@ -1763,9 +1763,11 @@ public class MenuController {
 
         for (int i = 0; i < 8; i++) {
             rows[i].setVisibility(View.GONE);
-            thumbs[i].setVisibility(View.GONE);
-            thumbs[i].setImageBitmap(null);
-            thumbs[i].setTag(null);
+            if (thumbs[i].getVisibility() != View.GONE) {
+                thumbs[i].setVisibility(View.GONE);
+                thumbs[i].setImageBitmap(null);
+                thumbs[i].setTag(null);
+            }
             if (i < rowDividers.length && rowDividers[i] != null) rowDividers[i].setVisibility(View.GONE);
         }
 
@@ -1853,15 +1855,7 @@ public class MenuController {
     }
 
     private void renderOptionARail(int accent) {
-        int activeRail = activeRailIndex();
-        for (int i = 0; i < railItems.length; i++) {
-            TextView item = railItems[i];
-            boolean active = i == activeRail;
-            boolean selected = isHome() && homeSelectionToRail(selection) == i;
-            UiTheme.railPanel(item, accent, active, selected);
-            item.setTextColor(selected ? UiTheme.TEXT_ON_ACCENT : (active ? UiTheme.TEXT : UiTheme.TEXT_MUTED));
-            item.setShadowLayer(active || selected ? 2 : 0, 0, 0, UiTheme.SHADOW);
-        }
+        // Side rail disabled: the simplified menu uses home tiles and page tabs only.
     }
 
     private int activeRailIndex() {

@@ -519,6 +519,36 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         return entry;
     }
 
+    private ProcessingQueueManager.Entry normalizeProcessingEntry(ProcessingQueueManager.Entry entry) {
+        if (entry == null) entry = createCurrentQueueEntry();
+        if (entry.profile == null) entry.profile = ProcessingQueueManager.copyProfile(recipeManager.getCurrentProfile());
+        if (entry.outDirPath == null || entry.outDirPath.length() == 0) {
+            entry.outDirPath = Filepaths.getGradedDir().getAbsolutePath();
+        }
+        if (entry.lutPath == null || entry.lutPath.length() == 0) entry.lutPath = "NONE";
+        if (entry.lutName == null || entry.lutName.length() == 0) entry.lutName = "OFF";
+        if (entry.jpegQuality <= 0) entry.jpegQuality = prefJpegQuality;
+        return entry;
+    }
+
+    private void processReadyEntry(ProcessingQueueManager.Entry entry, boolean isDiptychOutput) {
+        entry = normalizeProcessingEntry(entry);
+        if (mProcessor == null || entry.originalPath == null || entry.originalPath.length() == 0) {
+            isProcessing = false;
+            captureWritePending = false;
+            updateMainHUD();
+            return;
+        }
+        File outDir = entry.outDirPath != null && entry.outDirPath.length() > 0
+                ? new File(entry.outDirPath)
+                : Filepaths.getGradedDir();
+        entry.outDirPath = outDir.getAbsolutePath();
+        mProcessor.processJpeg(entry.originalPath, outDir.getAbsolutePath(),
+                entry.qualityIndex, entry.jpegQuality, entry.profile, entry.applyCrop, isDiptychOutput,
+                entry.lutPath, entry.lutName,
+                entry.scannerStartedMs, entry.detectedMs, entry.stableMs, entry.scannerAttempts);
+    }
+
     private String getProcessingStatusText() {
         if (processingQueueActive && processingQueueTotal > 0 && processingQueueManager != null) {
             int current = processingQueueCompleted + 1;
@@ -598,6 +628,18 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             finishQueuedProcessing();
             return;
         }
+        activeQueueEntry = normalizeProcessingEntry(activeQueueEntry);
+        if (activeQueueEntry.originalPath == null || activeQueueEntry.originalPath.length() == 0 ||
+                !new File(activeQueueEntry.originalPath).exists()) {
+            processingQueueManager.removeFirstForMode(activeQueueMode);
+            if (processingQueueManager.getCountForMode(activeQueueMode) > 0 &&
+                    processingQueueCompleted < processingQueueTotal) {
+                processNextQueuedPhoto();
+            } else {
+                finishQueuedProcessing();
+            }
+            return;
+        }
 
         if (tvTopStatus != null) {
             tvTopStatus.setText(getProcessingStatusText());
@@ -606,12 +648,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         File outDir = activeQueueEntry.outDirPath != null && activeQueueEntry.outDirPath.length() > 0
                 ? new File(activeQueueEntry.outDirPath)
                 : Filepaths.getGradedDir();
-        mProcessor.processJpeg(activeQueueEntry.originalPath, outDir.getAbsolutePath(),
-                activeQueueEntry.qualityIndex, activeQueueEntry.jpegQuality,
-                activeQueueEntry.profile, activeQueueEntry.applyCrop, activeQueueEntry.isDiptych,
-                activeQueueEntry.lutPath, activeQueueEntry.lutName,
-                activeQueueEntry.scannerStartedMs, activeQueueEntry.detectedMs,
-                activeQueueEntry.stableMs, activeQueueEntry.scannerAttempts);
+        activeQueueEntry.outDirPath = outDir.getAbsolutePath();
+        processReadyEntry(activeQueueEntry, activeQueueEntry.isDiptych);
     }
 
     private void handleQueuedProcessFinished(String result) {
@@ -759,17 +797,23 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 return;
             } else if (shouldQueueReadyPhoto(entry)) {
                 if (processingQueueManager != null) {
-                    entry.queueMode = currentQueueMode();
+                    entry = normalizeProcessingEntry(entry);
+                    if (entry.queueMode != ProcessingQueueManager.MODE_MANUAL) {
+                        entry.queueMode = ProcessingQueueManager.MODE_AUTO;
+                    }
                     processingQueueManager.add(entry);
                 }
                 isProcessing = false;
                 updateMainHUD();
                 maybeAutoProcessQueuedPhotos();
             } else {
-                File outDir = Filepaths.getGradedDir();
-                mProcessor.processJpeg(path, outDir.getAbsolutePath(), entry.qualityIndex, entry.jpegQuality, entry.profile, entry.applyCrop, false,
-                        entry.lutPath, entry.lutName,
-                        scannerStartedMs, detectedMs, stableMs, scannerAttempts);
+                entry = normalizeProcessingEntry(entry);
+                entry.originalPath = path;
+                entry.scannerStartedMs = scannerStartedMs;
+                entry.detectedMs = detectedMs;
+                entry.stableMs = stableMs;
+                entry.scannerAttempts = scannerAttempts;
+                processReadyEntry(entry, false);
             }
         } finally {
             restoreLiveViewMonochromeAfterCapture();
@@ -783,6 +827,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 
         if (shouldQueuePhotos()) {
             if (processingQueueManager != null) {
+                entry = normalizeProcessingEntry(entry);
                 entry.queueMode = currentQueueMode();
                 processingQueueManager.add(entry);
             }
@@ -790,10 +835,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             updateMainHUD();
             maybeAutoProcessQueuedPhotos();
         } else {
-            File outDir = Filepaths.getGradedDir();
-            mProcessor.processJpeg(tempPath, outDir.getAbsolutePath(), entry.qualityIndex, entry.jpegQuality, entry.profile, false, isDiptychOutput,
-                    entry.lutPath, entry.lutName,
-                    scannerStartedMs, detectedMs, stableMs, scannerAttempts);
+            entry = normalizeProcessingEntry(entry);
+            entry.originalPath = tempPath;
+            entry.applyCrop = false;
+            entry.scannerStartedMs = scannerStartedMs;
+            entry.detectedMs = detectedMs;
+            entry.stableMs = stableMs;
+            entry.scannerAttempts = scannerAttempts;
+            processReadyEntry(entry, isDiptychOutput);
         }
     }
 
@@ -854,7 +903,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 
     private boolean shouldQueueReadyPhoto(ProcessingQueueManager.Entry entry) {
         if (diptychManager != null && diptychManager.isEnabled()) return false;
-        return processingFrequency == PROCESSING_FREQUENCY_MANUAL || processingFrequency > 1;
+        if (entry != null && entry.queueMode == ProcessingQueueManager.MODE_MANUAL) return true;
+        return processingFrequency > 1;
     }
 
     private void refreshRecipes() {
@@ -1742,17 +1792,43 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         if (cameraManager == null || cameraManager.getCamera() == null) return;
         try {
             Camera c = cameraManager.getCamera();
-            Camera.Parameters p = c.getParameters();
-            List<String> effects = p.getSupportedColorEffects();
-            if (effects == null || effects.isEmpty()) return;
+            if (!enabled) {
+                HardwareRecipeApplier.apply(c, recipeManager.getCurrentProfile());
+                return;
+            }
 
-            String target = enabled ? Camera.Parameters.EFFECT_MONO : Camera.Parameters.EFFECT_NONE;
-            if (!effects.contains(target)) return;
-            String current = p.getColorEffect();
-            if (target.equals(current)) return;
+            boolean applied = false;
+            try {
+                Camera.Parameters p = c.getParameters();
+                List<String> effects = p.getSupportedColorEffects();
+                if (effects != null && effects.contains(Camera.Parameters.EFFECT_MONO)) {
+                    String current = p.getColorEffect();
+                    if (!Camera.Parameters.EFFECT_MONO.equals(current)) {
+                        p.setColorEffect(Camera.Parameters.EFFECT_MONO);
+                        c.setParameters(p);
+                    }
+                    applied = true;
+                }
+            } catch (Throwable ignored) {}
 
-            p.setColorEffect(target);
-            c.setParameters(p);
+            try {
+                Camera.Parameters p = c.getParameters();
+                boolean changed = false;
+                if (p.get("creative-style") != null) {
+                    p.set("creative-style", "mono");
+                    changed = true;
+                }
+                if (p.get("color-mode") != null) {
+                    p.set("color-mode", "mono");
+                    changed = true;
+                }
+                if (changed) {
+                    c.setParameters(p);
+                    applied = true;
+                }
+            } catch (Throwable ignored) {}
+
+            if (!applied) Log.w("JPEG.CAM", "Live view monochrome is not supported by this camera API");
         } catch (Throwable t) {
             Log.e("JPEG.CAM", "Failed to update live view monochrome", t);
         }

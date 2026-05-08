@@ -164,11 +164,16 @@ public class ImageProcessor {
             long nativeDoneMs = taskStartMs;
             int scale = -1;
             int finalJpegQuality = this.jpegQuality;
-            int finalGrainSize = p.grainSize;
-            int finalBloom = p.bloom;
-            int cxxGrainEngine = p.advancedGrainExperimental;
+            int finalGrainSize = 0;
+            int finalBloom = 0;
+            int cxxGrainEngine = 0;
             int numCores = 1;
             try {
+                if (p == null) return "FAILED";
+                finalGrainSize = p.grainSize;
+                finalBloom = p.bloom;
+                cxxGrainEngine = p.advancedGrainExperimental;
+
                 File original = new File(params[0]);
                 if (!original.exists()) return "ERR";
 
