@@ -90,7 +90,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     private boolean hasSurface = false;
     private MonochromePreviewOverlay monochromePreviewOverlay;
     private Camera.PreviewCallback monochromePreviewCallback;
+    private boolean monochromePreviewRequestInFlight = false;
     private long lastMonochromePreviewMs = 0;
+    private final Runnable monochromePreviewTick = new Runnable() {
+        @Override
+        public void run() {
+            requestMonochromePreviewFrame();
+        }
+    };
 
     private FrameLayout mainUIContainer;
     private LinearLayout llBottomBar;
@@ -1837,25 +1844,48 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     private void applyLiveViewMonochromeToCamera(boolean enabled) {
         if (monochromePreviewOverlay != null) {
             monochromePreviewOverlay.setVisibility(enabled ? View.VISIBLE : View.GONE);
+            monochromePreviewOverlay.setActive(enabled);
             if (!enabled) monochromePreviewOverlay.clearFrame();
             else monochromePreviewOverlay.bringToFront();
         }
         if (mainUIContainer != null) {
             mainUIContainer.bringToFront();
         }
+        if (enabled) {
+            startMonochromePreviewOverlay();
+            return;
+        }
+        stopMonochromePreviewOverlay(true);
+    }
+
+    private void startMonochromePreviewOverlay() {
+        liveViewMonochromeSuspended = false;
+        monochromePreviewRequestInFlight = false;
+        lastMonochromePreviewMs = 0;
+        uiHandler.removeCallbacks(monochromePreviewTick);
+        requestMonochromePreviewFrame();
+    }
+
+    private void stopMonochromePreviewOverlay(boolean clearFrame) {
+        uiHandler.removeCallbacks(monochromePreviewTick);
+        monochromePreviewRequestInFlight = false;
+        if (clearFrame && monochromePreviewOverlay != null) monochromePreviewOverlay.clearFrame();
         if (cameraManager == null || cameraManager.getCamera() == null) return;
         try {
-            Camera c = cameraManager.getCamera();
-            if (enabled) installMonochromePreviewCallback(c);
-            else {
-                c.setPreviewCallback(null);
-            }
+            cameraManager.getCamera().setPreviewCallback(null);
         } catch (Throwable t) {
             Log.e("JPEG.CAM", "Failed to update live view monochrome overlay", t);
         }
     }
 
-    private void installMonochromePreviewCallback(final Camera camera) {
+    private void requestMonochromePreviewFrame() {
+        if (!prefLiveViewMonochrome || liveViewMonochromeSuspended) return;
+        if (cameraManager == null || cameraManager.getCamera() == null) {
+            scheduleNextMonochromePreviewFrame();
+            return;
+        }
+        if (monochromePreviewRequestInFlight) monochromePreviewRequestInFlight = false;
+        final Camera camera = cameraManager.getCamera();
         if (monochromePreviewCallback == null) {
             monochromePreviewCallback = new Camera.PreviewCallback() {
                 @Override
@@ -1868,15 +1898,37 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                             Camera.Size size = c.getParameters().getPreviewSize();
                             if (size != null) monochromePreviewOverlay.updateFromLuma(data, size.width, size.height, MONO_PREVIEW_SAMPLE);
                         }
-                    } catch (Throwable ignored) {}
+                    } catch (Throwable ignored) {
+                    } finally {
+                        monochromePreviewRequestInFlight = false;
+                        scheduleNextMonochromePreviewFrame();
+                    }
                 }
             };
         }
-        camera.setPreviewCallback(monochromePreviewCallback);
+        try {
+            monochromePreviewRequestInFlight = true;
+            camera.setOneShotPreviewCallback(monochromePreviewCallback);
+            uiHandler.removeCallbacks(monochromePreviewTick);
+            uiHandler.postDelayed(monochromePreviewTick, MONO_PREVIEW_FRAME_MS * 3);
+        } catch (Throwable t) {
+            monochromePreviewRequestInFlight = false;
+            Log.e("JPEG.CAM", "Failed to request live view monochrome frame", t);
+            scheduleNextMonochromePreviewFrame();
+        }
+    }
+
+    private void scheduleNextMonochromePreviewFrame() {
+        if (!prefLiveViewMonochrome || liveViewMonochromeSuspended) return;
+        uiHandler.removeCallbacks(monochromePreviewTick);
+        uiHandler.postDelayed(monochromePreviewTick, MONO_PREVIEW_FRAME_MS);
     }
 
     private void prepareLiveViewMonochromeForCapture() {
-        liveViewMonochromeSuspended = false;
+        if (!prefLiveViewMonochrome) return;
+        liveViewMonochromeSuspended = true;
+        uiHandler.removeCallbacks(monochromePreviewTick);
+        monochromePreviewRequestInFlight = false;
     }
 
     private void restoreLiveViewMonochromeAfterCapture() {
@@ -2900,10 +2952,17 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         private Bitmap frame;
         private Rect dst = new Rect();
         private int[] pixels;
+        private boolean active = false;
 
         MonochromePreviewOverlay(Context context) {
             super(context);
             setBackgroundColor(Color.TRANSPARENT);
+            setWillNotDraw(false);
+        }
+
+        void setActive(boolean active) {
+            this.active = active;
+            invalidate();
         }
 
         void updateFromLuma(byte[] luma, int width, int height, int sample) {
@@ -2939,7 +2998,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         @Override
         protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
-            if (frame == null) return;
+            if (frame == null) {
+                if (active) canvas.drawColor(Color.argb(26, 190, 190, 190));
+                return;
+            }
             dst.set(0, 0, getWidth(), getHeight());
             canvas.drawBitmap(frame, null, dst, null);
         }

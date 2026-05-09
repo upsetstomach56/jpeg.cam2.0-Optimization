@@ -1154,11 +1154,6 @@ public class MenuController {
         else if (currentPage == 8) subtitle = "NETWORK - Web Dashboard";
         else if (currentPage == 9) subtitle = "SUPPORT - Resources";
         tvSubtitle.setText(subtitle);
-        if (currentMainTab == 1 && !manualQueueOpen) {
-            headerBar.setVisibility(View.GONE);
-            tvSubtitle.setVisibility(View.GONE);
-            pageDivider.setVisibility(View.GONE);
-        }
 
         for (int i = 0; i < 8; i++) {
             rows[i].setVisibility(View.GONE);
@@ -1680,7 +1675,7 @@ public class MenuController {
 
     private String[] categoryPageLabels(int tab) {
         if (tab == 0) return new String[] {"BASE", "COLOR", "FX", "GRAIN", "ANALOG"};
-        if (tab == 1) return new String[] {"APP", "BUTTONS"};
+        if (tab == 1) return new String[] {"APP PREFS", "CUSTOM BUTTONS"};
         if (tab == 2) return new String[] {"WEB"};
         return new String[] {"HELP"};
     }
@@ -1842,7 +1837,6 @@ public class MenuController {
         UiTheme.titlePanel(headerBar, UiTheme.ACCENT);
         headerTitle.setTextColor(UiTheme.TEXT);
         headerPath.setTextColor(UiTheme.ACCENT);
-        headerTitle.setText("JPEG.CAM");
         String section;
         String page;
         if (manualQueueOpen) {
@@ -1865,6 +1859,7 @@ public class MenuController {
             }
             if (page.length() == 0) page = section;
         }
+        headerTitle.setText("JPEG.CAM");
         String state = isNaming ? " / NAMING" : (isConfirmingDelete ? " / CONFIRM" : (isEditing ? " / EDITING" : ""));
         headerPath.setText(section + " / " + page + state);
     }
