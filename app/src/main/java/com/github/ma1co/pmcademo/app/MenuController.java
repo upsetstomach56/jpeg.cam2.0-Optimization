@@ -63,10 +63,6 @@ public class MenuController {
             "RECIPE SELECTION"
     };
     private static final int CUSTOM_BUTTON_ACTION_MAX = CUSTOM_BUTTON_LABELS.length - 1;
-    private static final String[] MIN_APERTURE_SHUTTER_LABELS = {
-            "OFF", "1/30", "1/60", "1/125", "1/250", "1/500"
-    };
-
     // --- NEW: Caches the physical files so their indexes match the menu ---
     public static java.util.List<File> grainTextureFiles = new java.util.ArrayList<File>();
     private static String[] cachedGrainOptions = null;
@@ -157,7 +153,6 @@ public class MenuController {
         int     getAppTheme();
         int     getProcessingFrequency();
         String  getCameraControlValue(int control);
-        int     getMinApertureShutterIndex();
         int     getQueuedPhotoCount();
         List<ProcessingQueueManager.Entry> getQueuedPhotoEntries();
         ProcessingQueueManager.Entry getQueuedPhotoEntry(int index);
@@ -174,7 +169,6 @@ public class MenuController {
         void setAppTheme(int v);
         void setProcessingFrequency(int v);
         void adjustCameraControl(int control, int dir);
-        void setMinApertureShutterIndex(int index);
         void forceProcessQueuedPhotos();
         void processSelectedQueuedPhotos(boolean[] selected);
         void clearSelectedQueuedPhotos(boolean[] selected);
@@ -1060,25 +1054,11 @@ public class MenuController {
             else if (sel == 2) rm.setPrefC3(clampCustomButtonAction(rm.getPrefC3() + dir));
             else if (sel == 3) rm.setPrefAel(clampCustomButtonAction(rm.getPrefAel() + dir));
             else if (sel == 4) rm.setPrefFn(clampCustomButtonAction(rm.getPrefFn() + dir));
-        } else if (currentPage == 10) {
-            if (sel == 0) {
-                host.setMinApertureShutterIndex(nextMinApertureShutterIndex(host.getMinApertureShutterIndex(), dir));
-            }
         }
 
         render();
         rm.savePreferences();
-        if (currentPage <= 5 || currentPage == 10) host.scheduleHardwareApply();
-    }
-
-    private int nextMinApertureShutterIndex(int current, int dir) {
-        int idx = Math.max(0, Math.min(MIN_APERTURE_SHUTTER_LABELS.length - 1, current));
-        return (idx + (dir >= 0 ? 1 : -1) + MIN_APERTURE_SHUTTER_LABELS.length) % MIN_APERTURE_SHUTTER_LABELS.length;
-    }
-
-    private String minApertureShutterLabel(int index) {
-        int idx = Math.max(0, Math.min(MIN_APERTURE_SHUTTER_LABELS.length - 1, index));
-        return MIN_APERTURE_SHUTTER_LABELS[idx];
+        if (currentPage <= 5) host.scheduleHardwareApply();
     }
 
     private int nextProcessingFrequency(int current, int dir) {
@@ -1173,7 +1153,6 @@ public class MenuController {
         else if (currentPage == 7) subtitle = "SETTINGS - Custom Buttons";
         else if (currentPage == 8) subtitle = "NETWORK - Web Dashboard";
         else if (currentPage == 9) subtitle = "SUPPORT - Resources";
-        else if (currentPage == 10) subtitle = "SETTINGS - Minimum Shutter";
         tvSubtitle.setText(subtitle);
         if (currentMainTab == 1 && !manualQueueOpen) {
             headerBar.setVisibility(View.GONE);
@@ -1301,9 +1280,6 @@ public class MenuController {
             setRow(2, "Custom 3 (C3)", customButtonLabel(rm.getPrefC3()));
             setRow(3, "AEL Button",    customButtonLabel(rm.getPrefAel()));
             setRow(4, "FN Button",     customButtonLabel(rm.getPrefFn()));
-        } else if (currentPage == 10) {
-            ic = 1;
-            setRow(0, "Min A-Mode Shutter", minApertureShutterLabel(host.getMinApertureShutterIndex()));
         } else if (currentPage == 8) {
             ic = 3;
             setRow(0, "Camera Hotspot", hotspotStatus);
@@ -1697,14 +1673,14 @@ public class MenuController {
 
     private int[] categoryPages(int tab) {
         if (tab == 0) return new int[] {1, 2, 3, 4, 5};
-        if (tab == 1) return new int[] {6, 10, 7};
+        if (tab == 1) return new int[] {6, 7};
         if (tab == 2) return new int[] {8};
         return new int[] {9};
     }
 
     private String[] categoryPageLabels(int tab) {
         if (tab == 0) return new String[] {"BASE", "COLOR", "FX", "GRAIN", "ANALOG"};
-        if (tab == 1) return new String[] {"APP", "SHUTTER", "BUTTONS"};
+        if (tab == 1) return new String[] {"APP", "BUTTONS"};
         if (tab == 2) return new String[] {"WEB"};
         return new String[] {"HELP"};
     }

@@ -4,6 +4,7 @@ import java.io.File;
 
 public class LutEngine {
     static { System.loadLibrary("native-lib"); }
+    private static final boolean DEBUG_CAM_LOAD = false;
     private String currentLutName = "";
     private String currentGrainTexturePath = "";
 
@@ -21,6 +22,10 @@ public class LutEngine {
 
     private native boolean loadLutNative(String filePath);
     private native boolean loadGrainTextureNative(String filePath);
+
+    private static void logCam(String msg) {
+        if (DEBUG_CAM_LOAD) DebugLog.write(msg);
+    }
 
     // Signature matches C++ exactly: 17 total parameters after env/obj
     public native boolean processImageNative(String inPath, String outPath,
@@ -41,9 +46,9 @@ public class LutEngine {
         boolean noLut = "OFF".equalsIgnoreCase(safeName) || "NONE".equalsIgnoreCase(path) || path.length() == 0;
 
         if (noLut) {
-            if ("OFF".equals(currentLutName)) return true;
-            loadLutNative("");
+            if (!"OFF".equals(currentLutName)) loadLutNative("");
             currentLutName = "OFF";
+            currentCamKey = "";
             return true;
         }
 
@@ -51,6 +56,7 @@ public class LutEngine {
         if (lutKey.equals(currentLutName)) return true;
         if (loadLutNative(path)) {
             currentLutName = lutKey;
+            currentCamKey = "";
             return true;
         }
         currentLutName = "";
@@ -107,14 +113,14 @@ public class LutEngine {
         CamLoadResult result = new CamLoadResult();
         java.io.File camFile = new java.io.File(camPath);
         if (!camFile.exists()) {
-            DebugLog.write("CAM: file not found: " + camPath);
+            logCam("CAM: file not found: " + camPath);
             return result;
         }
 
         // Cache check — if same .cam and same size, native already has it loaded.
         String cacheKey = camPath + "|" + camFile.length();
         if (cacheKey.equals(currentCamKey)) {
-            DebugLog.write("CAM: cache hit lut=" + lastCamLutLoaded + " grain=" + lastCamGrainLoaded);
+            logCam("CAM: cache hit lut=" + lastCamLutLoaded + " grain=" + lastCamGrainLoaded);
             result.lutLoaded   = lastCamLutLoaded;
             result.grainLoaded = lastCamGrainLoaded;
             return result;
@@ -137,27 +143,27 @@ public class LutEngine {
                         lutEntry   = json.optString("lutEntry",   null);
                         grainEntry = json.optString("grainEntry", null);
                     } catch (Exception e) {
-                        DebugLog.write("CAM: recipe.json parse error: " + e.getMessage());
+                        logCam("CAM: recipe.json parse error: " + e.getMessage());
                     }
                 } else {
-                    DebugLog.write("CAM: no recipe.json in bundle");
+                    logCam("CAM: no recipe.json in bundle");
                 }
 
                 // 2. Stream LUT directly to 8.3 temp file (no byte array in heap).
                 if (lutEntry == null) {
-                    DebugLog.write("CAM: no lutEntry in recipe.json");
+                    logCam("CAM: no lutEntry in recipe.json");
                 } else {
                     java.util.zip.ZipEntry le = zf.getEntry(lutEntry);
                     if (le != null) {
                         boolean isPng = lutEntry.toLowerCase().endsWith(".png");
                         tempLutFile = new File(cacheDir, isPng ? "LUT_TMP.PNG" : "LUT_TMP.CUB");
-                        DebugLog.write("CAM: streaming lut \"" + lutEntry + "\" (" + le.getSize() + "b) -> " + tempLutFile.getName());
+                        logCam("CAM: streaming lut \"" + lutEntry + "\" (" + le.getSize() + "b) -> " + tempLutFile.getName());
                         streamZipEntryToFile(zf, le, tempLutFile);
                         result.lutLoaded = loadLutNative(tempLutFile.getAbsolutePath());
-                        DebugLog.write("CAM: loadLutNative=" + result.lutLoaded);
+                        logCam("CAM: loadLutNative=" + result.lutLoaded);
                         currentLutName = "";
                     } else {
-                        DebugLog.write("CAM: lutEntry \"" + lutEntry + "\" not found in ZIP");
+                        logCam("CAM: lutEntry \"" + lutEntry + "\" not found in ZIP");
                     }
                 }
 
@@ -166,13 +172,13 @@ public class LutEngine {
                     java.util.zip.ZipEntry ge = zf.getEntry(grainEntry);
                     if (ge != null) {
                         tempGrainFile = new File(cacheDir, "GRN_TMP.PNG");
-                        DebugLog.write("CAM: streaming grain \"" + grainEntry + "\" (" + ge.getSize() + "b) -> " + tempGrainFile.getName());
+                        logCam("CAM: streaming grain \"" + grainEntry + "\" (" + ge.getSize() + "b) -> " + tempGrainFile.getName());
                         streamZipEntryToFile(zf, ge, tempGrainFile);
                         result.grainLoaded = loadGrainTextureNative(tempGrainFile.getAbsolutePath());
-                        DebugLog.write("CAM: loadGrainTextureNative=" + result.grainLoaded);
+                        logCam("CAM: loadGrainTextureNative=" + result.grainLoaded);
                         currentGrainTexturePath = "";
                     } else {
-                        DebugLog.write("CAM: grainEntry \"" + grainEntry + "\" not found in ZIP");
+                        logCam("CAM: grainEntry \"" + grainEntry + "\" not found in ZIP");
                     }
                 }
 
@@ -181,7 +187,7 @@ public class LutEngine {
             }
 
         } catch (Exception e) {
-            DebugLog.write("CAM: load exception: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+            logCam("CAM: load exception: " + e.getClass().getSimpleName() + ": " + e.getMessage());
             return result;
         } finally {
             if (tempLutFile   != null) tempLutFile.delete();
@@ -191,7 +197,7 @@ public class LutEngine {
         currentCamKey      = cacheKey;
         lastCamLutLoaded   = result.lutLoaded;
         lastCamGrainLoaded = result.grainLoaded;
-        DebugLog.write("CAM: loaded lut=" + result.lutLoaded + " grain=" + result.grainLoaded);
+        logCam("CAM: loaded lut=" + result.lutLoaded + " grain=" + result.grainLoaded);
         return result;
     }
 

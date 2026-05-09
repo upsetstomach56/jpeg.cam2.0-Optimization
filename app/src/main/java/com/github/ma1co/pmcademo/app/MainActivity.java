@@ -10,6 +10,7 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.ImageFormat;
 import android.graphics.Matrix;
 import android.graphics.Rect;
 import android.graphics.Typeface;
@@ -59,7 +60,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     private static final int PROCESSING_FREQUENCY_MANUAL = -1;
     private static final long MONO_PREVIEW_FRAME_MS = 250;
     private static final int MONO_PREVIEW_SAMPLE = 6;
-    private static final String[] MIN_APERTURE_SHUTTER_VALUES = {"off", "1/30", "1/60", "1/125", "1/250", "1/500"};
 
     private SonyCameraManager cameraManager;
     private InputManager inputManager;
@@ -91,6 +91,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     private boolean hasSurface = false;
     private MonochromePreviewOverlay monochromePreviewOverlay;
     private Camera.PreviewCallback monochromePreviewCallback;
+    private byte[] monochromePreviewBuffer;
+    private int monochromePreviewBufferSize = 0;
     private long lastMonochromePreviewMs = 0;
 
     private FrameLayout mainUIContainer;
@@ -141,7 +143,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     private int prefJpegQuality = 95;
     private int appTheme = UiTheme.THEME_ORANGE;
     private int processingFrequency = 1;
-    private int minApertureShutterIndex = 0;
     private boolean liveViewMonochromeSuspended = false;
     private DiptychManager diptychManager;
 
@@ -382,7 +383,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         appTheme = UiTheme.normalizeThemeIndex(prefs.getInt("appTheme", UiTheme.THEME_ORANGE));
         UiTheme.setTheme(appTheme);
         processingFrequency = normalizeProcessingFrequency(prefs.getInt("processingFrequency", 1));
-        minApertureShutterIndex = normalizeMinApertureShutterIndex(prefs.getInt("minApertureShutterIndex", 0));
         boolean prefShowDiptych = prefs.getBoolean("diptychEnabled", false);
         boolean prefShowDoubleExposure = prefs.getBoolean("doubleExposureEnabled", false);
         processingQueueManager = new ProcessingQueueManager();
@@ -409,6 +409,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 
         FrameLayout rootLayout = new FrameLayout(this);
         mSurfaceView = new SurfaceView(this);
+        mSurfaceView.setZOrderOnTop(false);
+        mSurfaceView.setZOrderMediaOverlay(false);
         mSurfaceView.getHolder().addCallback(this);
         mSurfaceView.getHolder().setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
         rootLayout.addView(mSurfaceView, new FrameLayout.LayoutParams(-1, -1));
@@ -483,10 +485,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         if (value == PROCESSING_FREQUENCY_MANUAL) return PROCESSING_FREQUENCY_MANUAL;
         if (value == 3 || value == 5) return value;
         return 1;
-    }
-
-    private int normalizeMinApertureShutterIndex(int value) {
-        return Math.max(0, Math.min(MIN_APERTURE_SHUTTER_VALUES.length - 1, value));
     }
 
     private boolean shouldQueuePhotos() {
@@ -909,14 +907,15 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             lutName = recipeManager.getRecipeNames().get(p.lutIndex);
         }
 
-        if (lutPath == null && p.grain <= 0) {
+        boolean camRecipe = p.camFile != null && p.camFile.trim().length() > 0;
+        if (!camRecipe && lutPath == null && p.grain <= 0) {
             // No LUT or texture selected, engine is ready immediately for other effects.
             isReady = true;
             updateMainHUD();
             maybeAutoProcessQueuedPhotos();
             return;
         }
-        mProcessor.triggerLutPreload(lutPath, lutName, p.grain, p.grainSize);
+        mProcessor.triggerLutPreload(lutPath, lutName, p.grain, p.grainSize, p.camFile);
     }
 
     private boolean shouldQueueReadyPhoto(ProcessingQueueManager.Entry entry) {
@@ -1439,7 +1438,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         ed.putInt("jpegQuality",       prefJpegQuality);
         ed.putInt("appTheme",          appTheme);
         ed.putInt("processingFrequency", processingFrequency);
-        ed.putInt("minApertureShutterIndex", minApertureShutterIndex);
         ed.putBoolean("diptychEnabled", isPrefDiptych());
         ed.putBoolean("doubleExposureEnabled", isPrefDoubleExposure());
         ed.apply();
@@ -1794,7 +1792,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 android.util.Log.e("JPEG.CAM", "Failed to set focus mode: " + e.getMessage());
             }
         }
-        applyMinimumAperturePriorityShutter();
         updateMainHUD();
     }
 
@@ -1831,65 +1828,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         return -1;
     }
 
-    private void applyMinimumAperturePriorityShutter() {
-        if (cameraManager == null || cameraManager.getCamera() == null) return;
-
-        try {
-            Camera c = cameraManager.getCamera();
-            Camera.Parameters p = c.getParameters();
-            if (!"aperture-priority".equals(p.getSceneMode())) return;
-
-            String value = MIN_APERTURE_SHUTTER_VALUES[normalizeMinApertureShutterIndex(minApertureShutterIndex)];
-            String[] keys = {
-                    "sony-auto-iso-min-shutter-speed",
-                    "sony-autoiso-min-shutter-speed",
-                    "sony-auto-iso-minimum-shutter-speed",
-                    "sony-auto-iso-shutter-speed",
-                    "sony-iso-auto-min-shutter-speed",
-                    "auto-iso-minimum-shutter-speed",
-                    "auto-iso-min-shutter-speed",
-                    "auto-iso-shutter-speed",
-                    "iso-auto-min-shutter-speed",
-                    "iso-auto-minimum-shutter-speed",
-                    "minimum-shutter-speed",
-                    "min-shutter-speed",
-                    "sony-min-shutter-speed",
-                    "auto-shutter-speed-low-limit",
-                    "shutter-speed-low-limit"
-            };
-            boolean applied = false;
-            for (int i = 0; i < keys.length; i++) {
-                applied = tryApplyCameraParameterString(c, keys[i], value) || applied;
-            }
-            if (!applied) Log.w("JPEG.CAM", "Minimum A-mode shutter key was not accepted by camera parameters");
-        } catch (Throwable t) {
-            Log.e("JPEG.CAM", "Failed to apply min aperture shutter", t);
-        }
-    }
-
-    private boolean tryApplyCameraParameterString(Camera c, String key, String value) {
-        try {
-            Camera.Parameters params = c.getParameters();
-            if (!"aperture-priority".equals(params.getSceneMode())) return false;
-            setCameraParameterString(params, key, value);
-            c.setParameters(params);
-            return true;
-        } catch (Throwable ignored) {
-            return false;
-        }
-    }
-
-    private void setCameraParameterString(Camera.Parameters params, String key, String value) throws Exception {
-        java.lang.reflect.Method setMethod = Camera.Parameters.class.getMethod("set", String.class, String.class);
-        setMethod.invoke(params, key, value);
-    }
-
     // --- NEW: KELVIN CYCLE HELPER ---
 
     private void applyHardwareRecipe() {
         if (cameraManager == null || cameraManager.getCamera() == null) return;
         HardwareRecipeApplier.apply(cameraManager.getCamera(), recipeManager.getCurrentProfile());
-        applyMinimumAperturePriorityShutter();
         applyLiveViewMonochromeToCamera(prefLiveViewMonochrome);
     }
 
@@ -1899,12 +1842,24 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         if (monochromePreviewOverlay != null) {
             monochromePreviewOverlay.setVisibility(enabled ? View.VISIBLE : View.GONE);
             if (!enabled) monochromePreviewOverlay.clearFrame();
+            else monochromePreviewOverlay.bringToFront();
+        }
+        if (mainUIContainer != null) {
+            mainUIContainer.bringToFront();
         }
         if (cameraManager == null || cameraManager.getCamera() == null) return;
         try {
             Camera c = cameraManager.getCamera();
             if (enabled) installMonochromePreviewCallback(c);
-            else c.setPreviewCallback(null);
+            else {
+                try {
+                    c.setPreviewCallbackWithBuffer(null);
+                } catch (Throwable ignored) {
+                    c.setPreviewCallback(null);
+                }
+                monochromePreviewBuffer = null;
+                monochromePreviewBufferSize = 0;
+            }
         } catch (Throwable t) {
             Log.e("JPEG.CAM", "Failed to update live view monochrome overlay", t);
         }
@@ -1915,27 +1870,65 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             monochromePreviewCallback = new Camera.PreviewCallback() {
                 @Override
                 public void onPreviewFrame(byte[] data, Camera c) {
-                    if (!prefLiveViewMonochrome || data == null || monochromePreviewOverlay == null) return;
-                    long now = System.currentTimeMillis();
-                    if (now - lastMonochromePreviewMs < MONO_PREVIEW_FRAME_MS) return;
-                    lastMonochromePreviewMs = now;
                     try {
-                        Camera.Size size = c.getParameters().getPreviewSize();
-                        if (size != null) monochromePreviewOverlay.updateFromLuma(data, size.width, size.height, MONO_PREVIEW_SAMPLE);
-                    } catch (Throwable ignored) {}
+                        if (!prefLiveViewMonochrome || data == null || monochromePreviewOverlay == null) return;
+                        long now = System.currentTimeMillis();
+                        if (now - lastMonochromePreviewMs >= MONO_PREVIEW_FRAME_MS) {
+                            lastMonochromePreviewMs = now;
+                            Camera.Size size = c.getParameters().getPreviewSize();
+                            if (size != null) monochromePreviewOverlay.updateFromLuma(data, size.width, size.height, MONO_PREVIEW_SAMPLE);
+                        }
+                    } catch (Throwable ignored) {
+                    } finally {
+                        if (prefLiveViewMonochrome && data != null) {
+                            try { c.addCallbackBuffer(data); } catch (Throwable ignored) {}
+                        }
+                    }
                 }
             };
         }
-        camera.setPreviewCallback(monochromePreviewCallback);
+        try {
+            Camera.Parameters params = camera.getParameters();
+            Camera.Size size = params.getPreviewSize();
+            int bitsPerPixel = ImageFormat.getBitsPerPixel(params.getPreviewFormat());
+            if (bitsPerPixel <= 0) bitsPerPixel = 12;
+            int bufferSize = size != null ? (size.width * size.height * bitsPerPixel) / 8 : 0;
+            if (bufferSize <= 0) {
+                camera.setPreviewCallback(monochromePreviewCallback);
+                return;
+            }
+            if (monochromePreviewBuffer == null || monochromePreviewBufferSize != bufferSize) {
+                monochromePreviewBuffer = new byte[bufferSize];
+                monochromePreviewBufferSize = bufferSize;
+            }
+            camera.setPreviewCallbackWithBuffer(null);
+            camera.addCallbackBuffer(monochromePreviewBuffer);
+            camera.setPreviewCallbackWithBuffer(monochromePreviewCallback);
+        } catch (Throwable t) {
+            camera.setPreviewCallback(monochromePreviewCallback);
+        }
     }
 
     private void prepareLiveViewMonochromeForCapture() {
         liveViewMonochromeSuspended = false;
+        if (!prefLiveViewMonochrome || cameraManager == null || cameraManager.getCamera() == null) return;
+        try {
+            Camera c = cameraManager.getCamera();
+            try {
+                c.setPreviewCallbackWithBuffer(null);
+            } catch (Throwable ignored) {
+                c.setPreviewCallback(null);
+            }
+            liveViewMonochromeSuspended = true;
+        } catch (Throwable ignored) {
+            liveViewMonochromeSuspended = false;
+        }
     }
 
     private void restoreLiveViewMonochromeAfterCapture() {
+        boolean shouldRestore = liveViewMonochromeSuspended || prefLiveViewMonochrome;
         liveViewMonochromeSuspended = false;
-        if (prefLiveViewMonochrome) applyLiveViewMonochromeToCamera(true);
+        if (shouldRestore && prefLiveViewMonochrome) applyLiveViewMonochromeToCamera(true);
     }
 
     private void setAutoPowerOffMode(boolean enable) {
@@ -2767,7 +2760,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         }
         return "--";
     }
-    @Override public int     getMinApertureShutterIndex() { return minApertureShutterIndex; }
     @Override public int     getQueuedPhotoCount() { return processingQueueManager != null ? processingQueueManager.getCountForMode(currentQueueMode()) : 0; }
     @Override public List<ProcessingQueueManager.Entry> getQueuedPhotoEntries() {
         if (processingQueueManager == null) return new ArrayList<ProcessingQueueManager.Entry>();
@@ -2811,13 +2803,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         handleHardwareInput(dir);
         mDialMode = previousMode;
         isDialLocked = previousLock;
-        if (control == 0 || control == 1) applyMinimumAperturePriorityShutter();
-        updateMainHUD();
-    }
-    @Override public void setMinApertureShutterIndex(int index) {
-        minApertureShutterIndex = normalizeMinApertureShutterIndex(index);
-        applyMinimumAperturePriorityShutter();
-        saveAppPreferences();
         updateMainHUD();
     }
     private void resetDiptychFocusAreas() {
