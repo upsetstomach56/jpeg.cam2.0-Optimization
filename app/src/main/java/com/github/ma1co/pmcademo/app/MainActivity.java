@@ -148,6 +148,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     private int appTheme = UiTheme.THEME_ORANGE;
     private int processingFrequency = 1;
     private boolean liveViewMonochromeSuspended = false;
+    private boolean liveViewMonochromeCaptureCommitted = false;
     private DiptychManager diptychManager;
 
     private LensProfileManager lensManager;
@@ -876,6 +877,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 keyCode == ScalarInput.ISV_KEY_S1_2 || keyCode == ScalarInput.ISV_KEY_S2;
     }
 
+    private boolean isCaptureCommitInput(int sc, int keyCode) {
+        return sc == ScalarInput.ISV_KEY_S2 || keyCode == ScalarInput.ISV_KEY_S2;
+    }
+
     private boolean shouldBlockShutterInput() {
         return isProcessing || captureWritePending;
     }
@@ -998,6 +1003,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             afOverlay.stopFocus(cameraManager.getCamera());
             afOverlay.setDiptychCenterX(-1);
         }
+        restoreLiveViewMonochromeIfCaptureAborted();
+        if (prefLiveViewMonochrome && !liveViewMonochromeSuspended) applyLiveViewMonochromeToCamera(true);
         if (displayState == 0 && !menuController.isOpen() && !playbackController.isActive()) setLiveUiSuppressed(false);
     }
 
@@ -1836,45 +1843,70 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     private void applyHardwareRecipe() {
         if (cameraManager == null || cameraManager.getCamera() == null) return;
         HardwareRecipeApplier.apply(cameraManager.getCamera(), recipeManager.getCurrentProfile());
-        applyLiveViewMonochromeToCamera(prefLiveViewMonochrome);
+        if (!liveViewMonochromeSuspended) applyLiveViewMonochromeToCamera(prefLiveViewMonochrome);
     }
 
     // getWbString() removed — logic consolidated into HardwareRecipeApplier.
 
     private void applyLiveViewMonochromeToCamera(boolean enabled) {
         if (monochromePreviewOverlay != null) {
-            monochromePreviewOverlay.setVisibility(enabled ? View.VISIBLE : View.GONE);
-            monochromePreviewOverlay.setActive(enabled);
-            if (!enabled) monochromePreviewOverlay.clearFrame();
-            else monochromePreviewOverlay.bringToFront();
+            monochromePreviewOverlay.setVisibility(View.GONE);
+            monochromePreviewOverlay.setActive(false);
+            monochromePreviewOverlay.clearFrame();
         }
-        if (mainUIContainer != null) {
-            mainUIContainer.bringToFront();
-        }
-        if (enabled) {
-            startMonochromePreviewOverlay();
-            return;
-        }
-        stopMonochromePreviewOverlay(true);
-    }
-
-    private void startMonochromePreviewOverlay() {
-        liveViewMonochromeSuspended = false;
-        monochromePreviewRequestInFlight = false;
-        lastMonochromePreviewMs = 0;
-        uiHandler.removeCallbacks(monochromePreviewTick);
-        requestMonochromePreviewFrame();
-    }
-
-    private void stopMonochromePreviewOverlay(boolean clearFrame) {
         uiHandler.removeCallbacks(monochromePreviewTick);
         monochromePreviewRequestInFlight = false;
-        if (clearFrame && monochromePreviewOverlay != null) monochromePreviewOverlay.clearFrame();
         if (cameraManager == null || cameraManager.getCamera() == null) return;
         try {
-            cameraManager.getCamera().setPreviewCallback(null);
+            Camera c = cameraManager.getCamera();
+            c.setPreviewCallback(null);
+            if (!enabled) {
+                try {
+                    Camera.Parameters p = c.getParameters();
+                    List<String> effects = p.getSupportedColorEffects();
+                    if (effects != null && effects.contains(Camera.Parameters.EFFECT_NONE)) {
+                        p.setColorEffect(Camera.Parameters.EFFECT_NONE);
+                        c.setParameters(p);
+                    }
+                } catch (Throwable ignored) {}
+                HardwareRecipeApplier.apply(c, recipeManager.getCurrentProfile());
+                return;
+            }
+
+            boolean applied = false;
+            try {
+                Camera.Parameters p = c.getParameters();
+                List<String> effects = p.getSupportedColorEffects();
+                if (effects != null && effects.contains(Camera.Parameters.EFFECT_MONO)) {
+                    String current = p.getColorEffect();
+                    if (!Camera.Parameters.EFFECT_MONO.equals(current)) {
+                        p.setColorEffect(Camera.Parameters.EFFECT_MONO);
+                        c.setParameters(p);
+                    }
+                    applied = true;
+                }
+            } catch (Throwable ignored) {}
+
+            try {
+                Camera.Parameters p = c.getParameters();
+                boolean changed = false;
+                if (p.get("creative-style") != null) {
+                    p.set("creative-style", "mono");
+                    changed = true;
+                }
+                if (p.get("color-mode") != null) {
+                    p.set("color-mode", "mono");
+                    changed = true;
+                }
+                if (changed) {
+                    c.setParameters(p);
+                    applied = true;
+                }
+            } catch (Throwable ignored) {}
+
+            if (!applied) Log.w("JPEG.CAM", "Live view monochrome is not supported by this camera API");
         } catch (Throwable t) {
-            Log.e("JPEG.CAM", "Failed to update live view monochrome overlay", t);
+            Log.e("JPEG.CAM", "Failed to update live view monochrome", t);
         }
     }
 
@@ -1925,16 +1957,27 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     }
 
     private void prepareLiveViewMonochromeForCapture() {
+        prepareLiveViewMonochromeForCapture(true);
+    }
+
+    private void prepareLiveViewMonochromeForCapture(boolean committed) {
         if (!prefLiveViewMonochrome) return;
         liveViewMonochromeSuspended = true;
-        uiHandler.removeCallbacks(monochromePreviewTick);
-        monochromePreviewRequestInFlight = false;
+        liveViewMonochromeCaptureCommitted = committed;
+        applyLiveViewMonochromeToCamera(false);
     }
 
     private void restoreLiveViewMonochromeAfterCapture() {
         boolean shouldRestore = liveViewMonochromeSuspended || prefLiveViewMonochrome;
         liveViewMonochromeSuspended = false;
+        liveViewMonochromeCaptureCommitted = false;
         if (shouldRestore && prefLiveViewMonochrome) applyLiveViewMonochromeToCamera(true);
+    }
+
+    private void restoreLiveViewMonochromeIfCaptureAborted() {
+        if (!prefLiveViewMonochrome || !liveViewMonochromeSuspended) return;
+        if (liveViewMonochromeCaptureCommitted && (isProcessing || captureWritePending || pendingShotSnapshot != null)) return;
+        restoreLiveViewMonochromeAfterCapture();
     }
 
     private void setAutoPowerOffMode(boolean enable) {
@@ -2185,7 +2228,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 
         if (shouldBlockShutterInput() && isShutterInput(sc, k)) return true;
         if (isFullShutterInput(sc, k) && (e == null || e.getRepeatCount() == 0)) {
-            prepareLiveViewMonochromeForCapture();
+            prepareLiveViewMonochromeForCapture(isCaptureCommitInput(sc, k));
             armFileScanner(true);
         }
 
@@ -2215,6 +2258,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 
         if (isFullShutterInput(sc, k) && (e == null || e.getRepeatCount() == 0)) {
             armFileScanner(false);
+            restoreLiveViewMonochromeIfCaptureAborted();
         }
 
         // --- CRITICAL: Swallow the release event so the Sony OS does nothing ---
