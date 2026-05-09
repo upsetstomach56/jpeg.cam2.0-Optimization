@@ -10,7 +10,6 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
-import android.graphics.ImageFormat;
 import android.graphics.Matrix;
 import android.graphics.Rect;
 import android.graphics.Typeface;
@@ -91,8 +90,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     private boolean hasSurface = false;
     private MonochromePreviewOverlay monochromePreviewOverlay;
     private Camera.PreviewCallback monochromePreviewCallback;
-    private byte[] monochromePreviewBuffer;
-    private int monochromePreviewBufferSize = 0;
     private long lastMonochromePreviewMs = 0;
 
     private FrameLayout mainUIContainer;
@@ -907,15 +904,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             lutName = recipeManager.getRecipeNames().get(p.lutIndex);
         }
 
-        boolean camRecipe = p.camFile != null && p.camFile.trim().length() > 0;
-        if (!camRecipe && lutPath == null && p.grain <= 0) {
+        if (lutPath == null && p.grain <= 0) {
             // No LUT or texture selected, engine is ready immediately for other effects.
             isReady = true;
             updateMainHUD();
             maybeAutoProcessQueuedPhotos();
             return;
         }
-        mProcessor.triggerLutPreload(lutPath, lutName, p.grain, p.grainSize, p.camFile);
+        mProcessor.triggerLutPreload(lutPath, lutName, p.grain, p.grainSize);
     }
 
     private boolean shouldQueueReadyPhoto(ProcessingQueueManager.Entry entry) {
@@ -1852,13 +1848,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             Camera c = cameraManager.getCamera();
             if (enabled) installMonochromePreviewCallback(c);
             else {
-                try {
-                    c.setPreviewCallbackWithBuffer(null);
-                } catch (Throwable ignored) {
-                    c.setPreviewCallback(null);
-                }
-                monochromePreviewBuffer = null;
-                monochromePreviewBufferSize = 0;
+                c.setPreviewCallback(null);
             }
         } catch (Throwable t) {
             Log.e("JPEG.CAM", "Failed to update live view monochrome overlay", t);
@@ -1878,51 +1868,15 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                             Camera.Size size = c.getParameters().getPreviewSize();
                             if (size != null) monochromePreviewOverlay.updateFromLuma(data, size.width, size.height, MONO_PREVIEW_SAMPLE);
                         }
-                    } catch (Throwable ignored) {
-                    } finally {
-                        if (prefLiveViewMonochrome && data != null) {
-                            try { c.addCallbackBuffer(data); } catch (Throwable ignored) {}
-                        }
-                    }
+                    } catch (Throwable ignored) {}
                 }
             };
         }
-        try {
-            Camera.Parameters params = camera.getParameters();
-            Camera.Size size = params.getPreviewSize();
-            int bitsPerPixel = ImageFormat.getBitsPerPixel(params.getPreviewFormat());
-            if (bitsPerPixel <= 0) bitsPerPixel = 12;
-            int bufferSize = size != null ? (size.width * size.height * bitsPerPixel) / 8 : 0;
-            if (bufferSize <= 0) {
-                camera.setPreviewCallback(monochromePreviewCallback);
-                return;
-            }
-            if (monochromePreviewBuffer == null || monochromePreviewBufferSize != bufferSize) {
-                monochromePreviewBuffer = new byte[bufferSize];
-                monochromePreviewBufferSize = bufferSize;
-            }
-            camera.setPreviewCallbackWithBuffer(null);
-            camera.addCallbackBuffer(monochromePreviewBuffer);
-            camera.setPreviewCallbackWithBuffer(monochromePreviewCallback);
-        } catch (Throwable t) {
-            camera.setPreviewCallback(monochromePreviewCallback);
-        }
+        camera.setPreviewCallback(monochromePreviewCallback);
     }
 
     private void prepareLiveViewMonochromeForCapture() {
         liveViewMonochromeSuspended = false;
-        if (!prefLiveViewMonochrome || cameraManager == null || cameraManager.getCamera() == null) return;
-        try {
-            Camera c = cameraManager.getCamera();
-            try {
-                c.setPreviewCallbackWithBuffer(null);
-            } catch (Throwable ignored) {
-                c.setPreviewCallback(null);
-            }
-            liveViewMonochromeSuspended = true;
-        } catch (Throwable ignored) {
-            liveViewMonochromeSuspended = false;
-        }
     }
 
     private void restoreLiveViewMonochromeAfterCapture() {

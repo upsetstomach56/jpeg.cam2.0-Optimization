@@ -26,11 +26,7 @@ public class ImageProcessor {
     }
 
     public void triggerLutPreload(String lutPath, String lutName, int grain, int grainSize) {
-        triggerLutPreload(lutPath, lutName, grain, grainSize, null);
-    }
-
-    public void triggerLutPreload(String lutPath, String lutName, int grain, int grainSize, String camFile) {
-        new PreloadLutTask(lutPath, lutName, grain, grainSize, camFile).execute();
+        new PreloadLutTask(lutPath, lutName, grain, grainSize).execute();
     }
 
     public void processJpeg(String originalPath, String outDirPath, int qualityIndex, int jpegQuality, RTLProfile p, boolean applyCrop, boolean isDiptych) {
@@ -69,36 +65,22 @@ public class ImageProcessor {
         private String lutName;
         private int grain;
         private int grainSize;
-        private String camFile;
 
-        public PreloadLutTask(String lutPath, String lutName, int grain, int grainSize, String camFile) {
+        public PreloadLutTask(String lutPath, String lutName, int grain, int grainSize) {
             this.lutPath = lutPath;
             this.lutName = lutName;
             this.grain = grain;
             this.grainSize = grainSize;
-            this.camFile = camFile;
         }
 
         @Override protected void onPreExecute() { mCallback.onPreloadStarted(); }
         @Override protected Boolean doInBackground(Void... params) {
-            boolean grainLoaded = false;
-            if (camFile != null && camFile.trim().length() > 0) {
-                String camPath = new File(Filepaths.getRecipeDir(), camFile).getAbsolutePath();
-                LutEngine.CamLoadResult cam = mEngine.loadFromCam(camPath, Filepaths.getAppDir());
-                grainLoaded = cam.grainLoaded;
-                if (!cam.lutLoaded) {
-                    if (hasUsableLut(lutPath, lutName)) {
-                        if (!mEngine.loadLut(lutPath, lutName)) mEngine.loadLut("NONE", "OFF");
-                    } else {
-                        mEngine.loadLut("NONE", "OFF");
-                    }
-                }
-            } else if (hasUsableLut(lutPath, lutName)) {
+            if (hasUsableLut(lutPath, lutName)) {
                 if (!mEngine.loadLut(lutPath, lutName)) return false;
             } else {
                 mEngine.loadLut("NONE", "OFF");
             }
-            if (grain > 0 && !grainLoaded) {
+            if (grain > 0) {
                 File texFile = MenuController.getGrainTextureFile(grainSize);
                 return mEngine.loadGrainTexture(texFile);
             }
@@ -244,7 +226,7 @@ public class ImageProcessor {
                 File dir = new File(outDir);
                 if (!dir.exists()) dir.mkdirs();
 
-                File outFile = new File(dir, buildOutputName(original, p));
+                File outFile = new File(dir, original.getName());
 
                 // 0=1/4 RES (4), 1=HALF RES (2), 2=FULL RES (1)
                 scale = (qualityIdx == 0) ? 4 : (qualityIdx == 2 ? 1 : 2);
