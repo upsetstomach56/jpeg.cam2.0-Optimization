@@ -1144,15 +1144,15 @@ public class MenuController {
         if (selection == -1) UiTheme.selected(tvSubtitle, accent);
         else UiTheme.clear(tvSubtitle);
         String subtitle = "";
-        if (currentPage == 1) subtitle = "RECIPES - Identity & Base";
-        else if (currentPage == 2) subtitle = "RECIPES - Color Engine";
-        else if (currentPage == 3) subtitle = "RECIPES - Effects & Shading";
-        else if (currentPage == 4) subtitle = "RECIPES - LUTs & Grain";
-        else if (currentPage == 5) subtitle = "RECIPES - Analog Physics";
-        else if (currentPage == 6) subtitle = "SETTINGS - App Preferences";
-        else if (currentPage == 7) subtitle = "SETTINGS - Custom Buttons";
-        else if (currentPage == 8) subtitle = "NETWORK - Web Dashboard";
-        else if (currentPage == 9) subtitle = "SUPPORT - Resources";
+        if (currentPage == 1) subtitle = "Identity & Base";
+        else if (currentPage == 2) subtitle = "Color Engine";
+        else if (currentPage == 3) subtitle = "Effects & Shading";
+        else if (currentPage == 4) subtitle = "LUTs & Grain";
+        else if (currentPage == 5) subtitle = "Analog Physics";
+        else if (currentPage == 6) subtitle = "App Preferences";
+        else if (currentPage == 7) subtitle = "Custom Buttons";
+        else if (currentPage == 8) subtitle = "Web Dashboard";
+        else if (currentPage == 9) subtitle = "Resources";
         tvSubtitle.setText(subtitle);
 
         for (int i = 0; i < 8; i++) {
@@ -1734,6 +1734,13 @@ public class MenuController {
         UiTheme.pageTabPanel(tvBack, accent, selection == -2 && headerSelection == 0, false);
         tvBack.setTextColor(selection == -2 && headerSelection == 0 ? UiTheme.textOnAccent(accent) : UiTheme.TEXT_MUTED);
 
+        if (labels.length <= 1) {
+            for (int i = 0; i < pageTabs.length; i++) {
+                pageTabs[i].setVisibility(View.GONE);
+            }
+            return;
+        }
+
         for (int i = 0; i < pageTabs.length; i++) {
             TextView tab = pageTabs[i];
             if (i >= labels.length) {
@@ -1839,30 +1846,17 @@ public class MenuController {
         headerTitle.setTextColor(UiTheme.TEXT);
         headerPath.setTextColor(accent);
         String section;
-        String page;
         if (manualQueueOpen) {
-            section = "QUEUE";
-            page = "PHOTO QUEUE";
+            section = "PHOTO QUEUE";
         } else if (isHome()) {
             section = "MENU";
-            page = "DASHBOARD";
         } else {
             String[] categories = {"RECIPES", "SETTINGS", "NETWORK", "SUPPORT"};
             section = currentMainTab >= 0 && currentMainTab < categories.length ? categories[currentMainTab] : "MENU";
-            String[] labels = categoryPageLabels(currentMainTab);
-            int[] pages = categoryPages(currentMainTab);
-            page = "";
-            for (int i = 0; i < pages.length; i++) {
-                if (pages[i] == currentPage) {
-                    page = labels[i];
-                    break;
-                }
-            }
-            if (page.length() == 0) page = section;
         }
-        headerTitle.setText(page);
-        String state = isNaming ? " / NAMING" : (isConfirmingDelete ? " / CONFIRM" : (isEditing ? " / EDITING" : ""));
-        headerPath.setText(section + state);
+        headerTitle.setText(section);
+        String state = isNaming ? "NAMING" : (isConfirmingDelete ? "CONFIRM" : (isEditing ? "EDITING" : ""));
+        headerPath.setText(state);
     }
 
     private void renderOptionARail(int accent) {
