@@ -878,7 +878,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     }
 
     private boolean isCaptureCommitInput(int sc, int keyCode) {
-        return sc == ScalarInput.ISV_KEY_S2 || keyCode == ScalarInput.ISV_KEY_S2;
+        return sc == ScalarInput.ISV_KEY_S1_2 || sc == ScalarInput.ISV_KEY_S2 ||
+                keyCode == ScalarInput.ISV_KEY_S1_2 || keyCode == ScalarInput.ISV_KEY_S2;
     }
 
     private boolean shouldBlockShutterInput() {
@@ -961,6 +962,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         if (playbackController.isActive()) { playbackController.exit(); return; }
         if (menuController.isOpen()) { menuController.close(); return; }
         if (shouldBlockShutterInput()) return;
+        prepareLiveViewMonochromeForCapture(false);
 
         // mDialMode = DIAL_MODE_RTL; <-- DELETED. Cursor memory is now permanent!
 
@@ -1962,6 +1964,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 
     private void prepareLiveViewMonochromeForCapture(boolean committed) {
         if (!prefLiveViewMonochrome) return;
+        if (liveViewMonochromeSuspended) {
+            if (committed) liveViewMonochromeCaptureCommitted = true;
+            return;
+        }
         liveViewMonochromeSuspended = true;
         liveViewMonochromeCaptureCommitted = committed;
         applyLiveViewMonochromeToCamera(false);
