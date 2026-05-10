@@ -26,8 +26,10 @@ public final class UiTheme {
     public static int ACCENT_DARK = Color.rgb(104, 57, 22);
     public static int ACCENT_RECIPES = Color.rgb(234, 133, 48);
     public static int ACCENT_SETTINGS = Color.rgb(234, 133, 48);
-    public static int ACCENT_NETWORK = Color.rgb(234, 133, 48);
-    public static int ACCENT_SUPPORT = Color.rgb(234, 133, 48);
+    public static final int ACCENT_NETWORK_FIXED = Color.rgb(58, 204, 255);
+    public static final int ACCENT_SUPPORT_FIXED = Color.rgb(70, 218, 142);
+    public static int ACCENT_NETWORK = ACCENT_NETWORK_FIXED;
+    public static int ACCENT_SUPPORT = ACCENT_SUPPORT_FIXED;
     public static int WARN = Color.rgb(236, 186, 84);
     public static int SUCCESS = Color.rgb(70, 218, 142);
     public static int ERROR = Color.rgb(235, 74, 83);
@@ -84,8 +86,8 @@ public final class UiTheme {
         ACCENT_DARK = darken(ACCENT);
         ACCENT_RECIPES = ACCENT;
         ACCENT_SETTINGS = ACCENT;
-        ACCENT_NETWORK = ACCENT;
-        ACCENT_SUPPORT = ACCENT;
+        ACCENT_NETWORK = ACCENT_NETWORK_FIXED;
+        ACCENT_SUPPORT = ACCENT_SUPPORT_FIXED;
     }
 
     public static GradientDrawable rect(int color, int strokeColor, int strokeWidth, float radius) {
@@ -179,6 +181,11 @@ public final class UiTheme {
     public static void selectedText(TextView tv) {
         tv.setTextColor(TEXT_ON_ACCENT);
         tv.setShadowLayer(2, 0, 0, SHADOW);
+    }
+
+    public static int textOnAccent(int accent) {
+        int luminance = (Color.red(accent) * 299 + Color.green(accent) * 587 + Color.blue(accent) * 114) / 1000;
+        return luminance > 150 ? Color.rgb(6, 18, 20) : Color.rgb(239, 246, 243);
     }
 
     public static void mutedText(TextView tv) {

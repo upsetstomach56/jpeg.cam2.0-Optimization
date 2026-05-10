@@ -1676,8 +1676,8 @@ public class MenuController {
     private String[] categoryPageLabels(int tab) {
         if (tab == 0) return new String[] {"BASE", "COLOR", "FX", "GRAIN", "ANALOG"};
         if (tab == 1) return new String[] {"APP PREFS", "CUSTOM BUTTONS"};
-        if (tab == 2) return new String[] {"WEB"};
-        return new String[] {"HELP"};
+        if (tab == 2) return new String[] {"NETWORK"};
+        return new String[] {"SUPPORT"};
     }
 
     private int activeHeaderSelection() {
@@ -1732,7 +1732,7 @@ public class MenuController {
         tabRow.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
         tvBack.setText("BACK");
         UiTheme.pageTabPanel(tvBack, accent, selection == -2 && headerSelection == 0, false);
-        tvBack.setTextColor(selection == -2 && headerSelection == 0 ? UiTheme.TEXT_ON_ACCENT : UiTheme.TEXT_MUTED);
+        tvBack.setTextColor(selection == -2 && headerSelection == 0 ? UiTheme.textOnAccent(accent) : UiTheme.TEXT_MUTED);
 
         for (int i = 0; i < pageTabs.length; i++) {
             TextView tab = pageTabs[i];
@@ -1745,7 +1745,7 @@ public class MenuController {
             boolean active = currentPage == pages[i];
             boolean selected = selection == -2 && headerSelection == i + 1;
             UiTheme.pageTabPanel(tab, accent, selected, active);
-            tab.setTextColor(selected ? UiTheme.TEXT_ON_ACCENT : (active ? UiTheme.TEXT : UiTheme.TEXT_MUTED));
+            tab.setTextColor(selected ? UiTheme.textOnAccent(accent) : (active ? UiTheme.TEXT : UiTheme.TEXT_MUTED));
         }
     }
 
@@ -1753,7 +1753,7 @@ public class MenuController {
         tabRow.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
         tvBack.setText("BACK");
         UiTheme.pageTabPanel(tvBack, accent, selection == -2, false);
-        tvBack.setTextColor(selection == -2 ? UiTheme.TEXT_ON_ACCENT : UiTheme.TEXT_MUTED);
+        tvBack.setTextColor(selection == -2 ? UiTheme.textOnAccent(accent) : UiTheme.TEXT_MUTED);
         tvBack.setVisibility(View.VISIBLE);
         for (int i = 0; i < pageTabs.length; i++) {
             pageTabs[i].setVisibility(View.GONE);
@@ -1780,10 +1780,10 @@ public class MenuController {
             if (i < rowDividers.length && rowDividers[i] != null) rowDividers[i].setVisibility(View.GONE);
         }
 
-        styleHomeTile(0, "RECIPES", UiTheme.ACCENT, selection == 0);
-        styleHomeTile(1, "SETTINGS", UiTheme.ACCENT, selection == 1);
-        styleHomeTile(2, "NETWORK", UiTheme.ACCENT, selection == 2);
-        styleHomeTile(3, "SUPPORT", UiTheme.ACCENT, selection == 3);
+        styleHomeTile(0, "RECIPES", tabAccent(0), selection == 0);
+        styleHomeTile(1, "SETTINGS", tabAccent(1), selection == 1);
+        styleHomeTile(2, "NETWORK", tabAccent(2), selection == 2);
+        styleHomeTile(3, "SUPPORT", tabAccent(3), selection == 3);
 
         int freq = host.getProcessingFrequency();
         String frequencyLabel = freq == PROCESSING_FREQUENCY_MANUAL ? "MANUAL" : (freq <= 1 ? "INSTANT" : (freq + " SHOTS"));
@@ -1805,7 +1805,7 @@ public class MenuController {
         TextView tile = homeTiles[index];
         tile.setText(text);
         UiTheme.tilePanel(tile, accent, selected);
-        tile.setTextColor(selected ? UiTheme.TEXT_ON_ACCENT : UiTheme.TEXT);
+        tile.setTextColor(selected ? UiTheme.textOnAccent(accent) : UiTheme.TEXT);
         tile.setShadowLayer(selected ? 2 : 0, 0, 0, UiTheme.SHADOW);
     }
 
@@ -1834,9 +1834,10 @@ public class MenuController {
 
     private void updateOptionAHeader() {
         headerBar.setVisibility(isHome() ? View.GONE : View.VISIBLE);
-        UiTheme.titlePanel(headerBar, UiTheme.ACCENT);
+        int accent = manualQueueOpen ? UiTheme.ACCENT : currentTabAccent();
+        UiTheme.titlePanel(headerBar, accent);
         headerTitle.setTextColor(UiTheme.TEXT);
-        headerPath.setTextColor(UiTheme.ACCENT);
+        headerPath.setTextColor(accent);
         String section;
         String page;
         if (manualQueueOpen) {
@@ -1859,9 +1860,9 @@ public class MenuController {
             }
             if (page.length() == 0) page = section;
         }
-        headerTitle.setText("JPEG.CAM");
+        headerTitle.setText(page);
         String state = isNaming ? " / NAMING" : (isConfirmingDelete ? " / CONFIRM" : (isEditing ? " / EDITING" : ""));
-        headerPath.setText(section + " / " + page + state);
+        headerPath.setText(section + state);
     }
 
     private void renderOptionARail(int accent) {
@@ -1969,6 +1970,10 @@ public class MenuController {
     }
 
     private int tabAccent(int tab) {
+        if (tab == 0) return UiTheme.ACCENT_RECIPES;
+        if (tab == 1) return UiTheme.ACCENT_SETTINGS;
+        if (tab == 2) return UiTheme.ACCENT_NETWORK;
+        if (tab == 3) return UiTheme.ACCENT_SUPPORT;
         return UiTheme.ACCENT;
     }
 }
